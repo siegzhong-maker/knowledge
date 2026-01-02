@@ -1,0 +1,35 @@
+{
+  "name": "knowledge-manager",
+  "version": "1.0.0",
+  "description": "知识管理系统 - 文本内容采集、管理和AI辅助处理",
+  "main": "backend/server.js",
+  "scripts": {
+    "dev": "node backend/server.js",
+    "start": "node backend/server.js",
+    "init-db": "node backend/scripts/init-db.js",
+    "migrate-pdf": "node backend/scripts/migrate-pdf-support.js",
+    "migrate-kb": "node backend/scripts/migrate-to-multi-knowledge-bases.js",
+    "postinstall": "npm run init-db || true"
+  },
+  "keywords": [
+    "knowledge",
+    "ai",
+    "deepseek"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1",
+    "sqlite3": "^5.1.6",
+    "tailwindcss": "^4.1.18",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

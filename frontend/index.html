@@ -1,0 +1,1729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consultant - 创业咨询平台</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- FontAwesome (保留用于现有功能) -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    referrerpolicy="no-referrer"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
+    rel="stylesheet"
+  />
+  <!-- Marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+  <!-- PDF.js for PDF rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // 配置PDF.js Worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+  <style>
+    body {
+      font-family: "Inter", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont,
+        sans-serif;
+      background-color: #FAFAFA;
+    }
+    
+    /* 咨询工作台样式 */
+    .slide-panel { 
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    #right-panel.w-\[45\%\], #right-panel.w-\[40\%\] {
+      width: 40% !important;
+    }
+    .fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }
+    @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+    
+    .scenario-card {
+      background: white; border: 1px solid #E2E8F0; border-radius: 16px;
+      padding: 20px; cursor: pointer; transition: all 0.2s;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+    }
+    .scenario-card:hover {
+      border-color: #818CF8; transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.1);
+    }
+    
+    .msg-user { 
+      background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%); color: white; 
+      border-radius: 16px 16px 4px 16px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
+    }
+    .msg-ai { 
+      background: white; border: 1px solid #E2E8F0; 
+      border-radius: 16px 16px 16px 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    
+    .role-badge {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .active-tab {
+      background-color: #eef2ff;
+      color: #4f46e5;
+    }
+    
+    /* 模块选择器步骤展开/折叠动画 */
+    .module-step-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+      opacity: 0;
+    }
+    .module-step-content.expanded {
+      max-height: 1000px;
+      opacity: 1;
+    }
+    .role-equity { background: #ECFDF5; color: #059669; }
+    .role-brand { background: #EFF6FF; color: #2563EB; }
+    .role-triage { background: #F3F4F6; color: #4B5563; }
+    
+    .highlight-mark {
+      background: rgba(254, 240, 138, 0.5); border-bottom: 2px solid #EAB308;
+      cursor: pointer; transition: background 0.3s;
+    }
+    .highlight-mark.active { background: rgba(254, 240, 138, 1); }
+    
+    .cursor-blink { animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    
+    /* 引用卡片样式 */
+    .citations-area {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .citations-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .citations-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .citation-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    
+    .citation-card:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+      transform: translateY(-1px);
+    }
+    
+    .citation-card.viewed {
+      background: #f0f9ff;
+      border-color: #3b82f6;
+    }
+    
+    .citation-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    
+    .citation-header .doc-name {
+      flex: 1;
+      font-weight: 600;
+      color: #1e293b;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .page-badge {
+      background: #e0e7ff;
+      color: #4f46e5;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    
+    .citation-preview {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      font-style: italic;
+    }
+    
+    .view-citation-btn {
+      font-size: 11px;
+      color: #3b82f6;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    
+    .view-citation-btn:hover {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    
+    /* 答案中的引用高亮 */
+    .citation-link {
+      color: #3b82f6;
+      text-decoration: underline;
+      text-decoration-color: #93c5fd;
+      text-underline-offset: 2px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    
+    .citation-link:hover {
+      color: #2563eb;
+      text-decoration-color: #3b82f6;
+      background: #eff6ff;
+      padding: 0 2px;
+      border-radius: 3px;
+    }
+    
+    .citation-marker {
+      font-size: 0.85em;
+      color: #6366f1;
+      font-weight: 600;
+      margin-left: 2px;
+    }
+    
+    /* 消息操作按钮 */
+    .message-actions {
+      display: flex;
+      gap: 4px;
+    }
+    
+    .action-btn {
+      padding: 4px 8px;
+      background: #f1f5f9;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #64748b;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .action-btn:hover {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    /* Markdown 内容样式优化 */
+    .prose strong {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .prose ul, .prose ol {
+      padding-left: 1.5em;
+    }
+    .prose li {
+      margin-top: 0.25em;
+      margin-bottom: 0.25em;
+    }
+    .prose h1, .prose h2, .prose h3 {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    /* 输入框自动调整高度 */
+    #chat-input {
+      min-height: 44px;
+      max-height: 200px;
+    }
+    /* 聊天消息中的 Markdown 样式 */
+    #chat-history .prose {
+      color: inherit;
+    }
+    #chat-history .prose strong {
+      font-weight: 600;
+      color: inherit;
+    }
+    #chat-history .prose p {
+      margin: 0.5em 0;
+    }
+    #chat-history .prose ul,
+    #chat-history .prose ol {
+      margin: 0.5em 0;
+      padding-left: 1.5em;
+    }
+    #chat-history .prose li {
+      margin: 0.25em 0;
+    }
+    #chat-history .prose h1,
+    #chat-history .prose h2,
+    #chat-history .prose h3 {
+      margin-top: 0.75em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+    }
+    #chat-history .prose code {
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 0.125em 0.25em;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+    }
+    
+    /* PDF页面高亮样式 */
+    .highlighted-pdf-page {
+      border: 3px solid #3b82f6 !important;
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3) !important;
+      transition: all 0.3s ease;
+      border-radius: 4px;
+      background-color: rgba(239, 246, 255, 0.3);
+    }
+    
+    /* PDF文本高亮overlay样式 */
+    .pdf-text-highlight {
+      background-color: rgba(255, 237, 74, 0.4);
+      border: 2px solid #fbbf24;
+      border-radius: 3px;
+      box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+      animation: textHighlightPulse 0.5s ease-out;
+    }
+    
+    @keyframes textHighlightPulse {
+      0% {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1.02);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+    
+    /* 文档内容区域优化，避免被输入框遮挡 */
+    #pdf-content {
+      padding-bottom: 2rem;
+    }
+    
+    /* PDF页面容器确保可以滚动到底部 */
+    .pdf-pages-container {
+      padding-bottom: 3rem !important;
+    }
+    
+    /* 确保右侧面板内容可以正常滚动 */
+    #right-panel-content {
+      position: relative;
+    }
+  </style>
+</head>
+<body class="text-slate-800 h-screen overflow-hidden flex">
+  <!-- Mobile Menu Button -->
+  <button
+    id="btn-mobile-menu"
+    class="lg:hidden fixed top-4 left-4 z-50 p-2 bg-slate-900 text-white rounded-md shadow-lg"
+  >
+    <i class="fa-solid fa-bars"></i>
+  </button>
+
+  <!-- Sidebar -->
+  <aside
+    id="sidebar"
+    class="fixed inset-y-0 left-0 transform -translate-x-full lg:relative lg:translate-x-0 w-64 bg-slate-900 text-white flex flex-col justify-between transition-transform duration-300 z-40 shadow-xl lg:shadow-none flex-shrink-0"
+  >
+    <div>
+      <div
+        class="h-16 flex items-center px-6 border-b border-slate-700 select-none"
+      >
+        <div
+          class="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-500/30"
+        >
+          K
+        </div>
+        <span class="ml-3 font-bold text-lg tracking-wide">KnowledgeOS</span>
+      </div>
+
+      <nav class="mt-6 px-4 space-y-2">
+        <button
+          data-view="consultation"
+          class="nav-item group flex items-center w-full text-left px-4 py-3 text-sm font-medium bg-slate-800 text-white rounded-lg transition-all hover:translate-x-1"
+        >
+          <i
+            class="fa-solid fa-comments text-indigo-400 w-6 text-center text-lg mr-2"
+          ></i>
+          <span>咨询工作台</span>
+        </button>
+        <button
+          data-view="dashboard"
+          class="nav-item group flex items-center w-full text-left px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-all hover:translate-x-1 hidden"
+        >
+          <i
+            class="fa-solid fa-grid-2 w-6 text-center text-lg mr-2"
+          ></i>
+          <span>工作台</span>
+        </button>
+        <button
+          data-view="repository"
+          class="nav-item group flex items-center w-full text-left px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-all hover:translate-x-1"
+        >
+          <i
+            class="fa-solid fa-layer-group w-6 text-center text-lg mr-2"
+          ></i>
+          <span>知识库</span>
+        </button>
+        <button
+          data-view="archive"
+          class="nav-item group flex items-center w-full text-left px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-all hover:translate-x-1"
+        >
+          <i
+            class="fa-solid fa-archive w-6 text-center text-lg mr-2"
+          ></i>
+          <span>归档</span>
+        </button>
+        <button
+          data-view="tags"
+          class="nav-item group flex items-center w-full text-left px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-all hover:translate-x-1 hidden"
+        >
+          <i
+            class="fa-solid fa-hashtag w-6 text-center text-lg mr-2"
+          ></i>
+          <span>标签管理</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="p-4 border-t border-slate-700 bg-slate-800/50">
+      <button
+        id="btn-open-settings"
+        class="flex items-center w-full cursor-pointer hover:bg-slate-800 p-2 rounded-lg transition-colors"
+      >
+        <img
+          class="h-9 w-9 rounded-full border-2 border-slate-600"
+          src="https://ui-avatars.com/api/?name=User&background=6366f1&color=fff"
+          alt="User"
+        />
+        <div class="ml-3 flex-1 min-w-0 text-left">
+          <p class="text-sm font-medium text-white truncate">独立开发者</p>
+          <p class="text-xs text-slate-400 truncate" id="api-status-text">
+            API 未配置
+          </p>
+        </div>
+        <i
+          class="fa-solid fa-gear text-slate-400 hover:text-white transition-colors"
+        ></i>
+      </button>
+    </div>
+  </aside>
+
+  <div
+    id="sidebar-overlay"
+    class="fixed inset-0 bg-black/50 z-30 hidden lg:hidden"
+  ></div>
+
+  <!-- Main -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+    <!-- Top bar -->
+    <header
+      class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 shadow-sm z-10 flex-shrink-0"
+    >
+      <div class="w-8 lg:hidden"></div>
+      <div class="flex-1 max-w-2xl mx-auto lg:mx-0 flex gap-2">
+        <div class="relative group flex-1">
+          <div
+            class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+          >
+            <i
+              class="fa-solid fa-search text-slate-400 group-focus-within:text-indigo-500 transition-colors"
+            ></i>
+          </div>
+          <input
+            type="text"
+            id="global-search"
+            class="block w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-xl leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all sm:text-sm shadow-sm"
+            placeholder="搜索标题、内容、标签..."
+          />
+        </div>
+        <div class="relative group">
+          <div
+            class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+          >
+            <i
+              class="fa-solid fa-plus text-slate-400 group-focus-within:text-indigo-500 transition-colors"
+            ></i>
+          </div>
+          <input
+            type="text"
+            id="quick-input"
+            class="block w-full pl-10 pr-20 py-2.5 border border-indigo-200 rounded-xl leading-5 bg-indigo-50/50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all sm:text-sm shadow-sm"
+            placeholder="粘贴URL或输入文本，回车导入..."
+          />
+          <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <span class="text-xs text-slate-400 hidden sm:inline">Enter</span>
+          </div>
+        </div>
+      </div>
+      <div class="ml-4 flex items-center space-x-3 lg:space-x-5">
+        <div
+          id="api-pill"
+          class="hidden md:flex items-center text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded"
+        >
+          <span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+          DeepSeek 未连接
+        </div>
+        <button
+          id="btn-refresh"
+          class="p-2 text-slate-400 hover:text-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="刷新内容 (F5)"
+        >
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Views -->
+    <div id="view-container" class="flex-1 overflow-auto bg-slate-50 relative">
+      <!-- Consultation Workspace (咨询工作台) -->
+      <section
+        id="view-consultation"
+        class="view-section hidden h-full flex"
+      >
+        <!-- 左侧知识库侧栏 -->
+        <aside class="w-[260px] bg-white border-r border-slate-200 flex flex-col z-20">
+          <div class="h-16 flex items-center px-5 border-b border-slate-100">
+            <div class="flex items-center gap-2.5 font-bold text-slate-800 text-lg">
+              <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                <i data-lucide="brain-circuit" size="18"></i>
+              </div>
+              Consultant
+            </div>
+          </div>
+
+          <div class="flex-1 overflow-y-auto p-3 space-y-4">
+            <!-- 知识库切换器 -->
+            <div class="mb-4">
+              <div id="knowledge-base-switcher">
+                <!-- 知识库切换器由JS动态渲染 -->
+              </div>
+            </div>
+            
+
+            <!-- 知识库列表 -->
+            <div>
+              <div class="px-2 text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+                <i data-lucide="book-open" size="12"></i>
+                <span>参考文档</span>
+              </div>
+              <p class="px-2 text-[11px] text-slate-400 mb-2 leading-relaxed">点击文档可查看详细内容，助手会基于这些文档为您解答</p>
+              <div class="space-y-1" id="knowledge-base-list">
+                <!-- PDF列表由JS动态渲染 -->
+              </div>
+            </div>
+
+            <!-- 历史对话列表 -->
+            <div class="mt-4">
+              <div class="px-2 text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+                <i data-lucide="message-square" size="12"></i>
+                <span>对话历史</span>
+              </div>
+              <p class="px-2 text-[11px] text-slate-400 mb-2 leading-relaxed">点击可继续之前的对话</p>
+              <div class="px-2 mb-2">
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                    <i data-lucide="search" size="12" class="text-slate-400"></i>
+                  </div>
+                  <input
+                    type="text"
+                    id="conversation-history-search"
+                    class="block w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                    placeholder="搜索对话..."
+                  />
+                </div>
+              </div>
+              <div class="space-y-1 max-h-[300px] overflow-y-auto" id="conversation-history-list">
+                <!-- 历史对话列表由JS动态渲染 -->
+              </div>
+            </div>
+          </div>
+          
+          <div class="p-4 border-t border-slate-100">
+              <button id="btn-upload-pdf" class="w-full py-2.5 border border-dashed border-slate-300 rounded-lg text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2 hover:bg-slate-50">
+                <i data-lucide="upload" size="12"></i> 上传参考文档
+              </button>
+          </div>
+        </aside>
+
+        <!-- 中间咨询工作台 -->
+        <main class="flex-1 flex flex-col bg-white relative z-10 shadow-2xl transition-all duration-300">
+          <!-- 顶部 Context -->
+          <header class="h-14 border-b border-slate-100 flex items-center justify-between px-6 bg-white/80 backdrop-blur z-20">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <div class="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200 transition-colors" id="context-label" onclick="window.editContext && window.editContext()">
+                <i data-lucide="briefcase" size="14" class="text-slate-500"></i>
+                <span class="text-xs font-medium text-slate-600" id="context-label-text">加载中...</span>
+              </div>
+              
+              <button onclick="createNewConversation()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors" title="新建对话">
+                <i data-lucide="plus-circle" size="14"></i>
+                <span>新建对话</span>
+              </button>
+              
+              <!-- 对话历史下拉菜单 -->
+              <div class="relative">
+                <button onclick="showConversationSwitcher()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors" title="切换对话">
+                  <i data-lucide="message-square" size="14"></i>
+                  <span>对话历史</span>
+                </button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleRightPanel()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors" title="查看文档 (Cmd/Ctrl+D)">
+                <i data-lucide="file-text" size="14"></i>
+                <span>文档</span>
+              </button>
+            </div>
+          </header>
+
+          <!-- 聊天区域状态提示 -->
+          <div id="chat-status-indicator" class="hidden px-6 py-2 bg-slate-50 border-b border-slate-200">
+            <div class="max-w-3xl mx-auto flex items-center justify-between">
+              <div class="flex items-center gap-2 text-xs text-slate-600">
+                <i data-lucide="file-text" size="14"></i>
+                <span id="chat-status-text">准备就绪</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button 
+                  id="chat-switch-conversation-btn"
+                  onclick="showConversationSwitcher()"
+                  class="px-2 py-1 text-xs text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors hidden"
+                >
+                  <i data-lucide="message-square" size="12" class="inline mr-1"></i>
+                  切换对话
+                </button>
+                <button 
+                  onclick="createNewConversation()"
+                  class="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                >
+                  <i data-lucide="plus-circle" size="12" class="inline mr-1"></i>
+                  新对话
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 聊天区域 -->
+          <div class="flex-1 overflow-y-auto p-6 scroll-smooth" id="chat-container">
+            <!-- Welcome Screen (Hidden by default) -->
+            <div id="welcome-screen" class="hidden">
+            </div>
+
+            <!-- Dynamic Chat Content (Always visible) -->
+            <div id="chat-stream" class="max-w-3xl mx-auto space-y-6 pb-20">
+              <!-- Messages injected by JS -->
+              <!-- Empty state will be shown here if no messages -->
+            </div>
+          </div>
+
+          <!-- 输入区域 -->
+          <div class="p-4 bg-gradient-to-t from-white via-white to-transparent z-20 border-t border-slate-100">
+            <!-- 当前文档提示 -->
+            <div id="current-doc-hint" class="max-w-3xl mx-auto mb-2 hidden">
+              <div class="flex items-center gap-2 text-xs text-slate-500 px-2">
+                <i data-lucide="file-text" size="12"></i>
+                <span id="current-doc-name"></span>
+              </div>
+            </div>
+            <div class="max-w-3xl mx-auto bg-white border border-slate-200 shadow-lg rounded-xl p-2 flex items-end gap-2 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-300 transition-all">
+              <textarea 
+                id="user-input" 
+                onkeydown="handleInputKeydown(event)" 
+                oninput="handleInputChange()"
+                rows="1" 
+                class="flex-1 max-h-32 py-2.5 px-3 bg-transparent border-none outline-none text-slate-800 placeholder:text-slate-400 resize-none text-sm" 
+                placeholder="输入问题开始对话 (Shift+Enter 换行, Enter 发送)"
+              ></textarea>
+              <button id="send-button" onclick="sendMessage()" class="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-300" disabled>
+                <i data-lucide="arrow-up" size="18" id="send-icon"></i>
+              </button>
+            </div>
+            <div class="max-w-3xl mx-auto mt-1 px-2">
+              <p class="text-[10px] text-slate-400">支持直接输入，AI会自动匹配相关文档</p>
+            </div>
+          </div>
+        </main>
+
+        <!-- 右侧PDF阅读器抽屉 -->
+        <aside id="right-panel" class="w-0 bg-slate-50 border-l border-slate-200 slide-panel flex flex-col relative overflow-hidden">
+          <!-- Toolbar -->
+          <div class="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0">
+            <div class="flex items-center gap-2 overflow-hidden">
+              <i data-lucide="file-text" size="16" class="text-slate-400"></i>
+              <span id="doc-title" class="text-xs font-semibold text-slate-700 truncate">文档查看</span>
+            </div>
+            <button onclick="toggleRightPanel()" class="p-1.5 text-slate-400 hover:bg-slate-100 rounded-md">
+              <i data-lucide="x" size="18"></i>
+            </button>
+          </div>
+          
+          <!-- Tabs -->
+          <div class="h-12 bg-white border-b border-slate-200 flex items-center gap-1 px-4 flex-shrink-0">
+            <button 
+              id="right-panel-tab-content" 
+              class="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors active-tab"
+              onclick="switchRightPanelTab('content')"
+            >
+              <i data-lucide="file-text" size="14" class="inline mr-1"></i>
+              内容
+            </button>
+            <button 
+              id="right-panel-tab-conversations" 
+              class="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              onclick="switchRightPanelTab('conversations')"
+            >
+              <i data-lucide="message-square" size="14" class="inline mr-1"></i>
+              对话历史
+            </button>
+          </div>
+          
+          <!-- Document Content Tab -->
+          <div id="right-panel-content" class="flex-1 overflow-hidden flex flex-col">
+            <div id="pdf-content" class="flex-1 overflow-hidden transition-opacity opacity-0">
+              <!-- Content Injected -->
+            </div>
+          </div>
+          
+          <!-- Conversations Tab -->
+          <div id="right-panel-conversations" class="flex-1 overflow-y-auto p-4 hidden">
+            <div id="doc-conversations-list" class="max-w-[700px] mx-auto space-y-2">
+              <!-- Conversations will be rendered here -->
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <!-- Dashboard -->
+      <section
+        id="view-dashboard"
+        class="view-section p-6 lg:p-10 max-w-7xl mx-auto"
+      >
+        <div
+          class="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4"
+        >
+          <div>
+            <h1 class="text-3xl font-bold text-slate-900 tracking-tight">
+              早安, 探索者 ☀️
+            </h1>
+            <p class="text-slate-500 mt-2" id="dashboard-subtitle">
+              正在加载内容...
+            </p>
+          </div>
+          <div class="flex space-x-3">
+            <button
+              id="btn-batch-summary"
+              class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i class="fa-solid fa-bolt mr-2"></i> 批量摘要
+            </button>
+          </div>
+        </div>
+
+        <!-- Filters：现在统一为文本，只保留「全部」按钮 -->
+        <div
+          class="flex space-x-3 mb-6 overflow-x-auto pb-2 no-scrollbar"
+          id="filter-container"
+        >
+          <button
+            data-filter="all"
+            class="filter-btn px-5 py-2 bg-slate-800 text-white rounded-full text-sm font-medium shadow-sm transition-all hover:scale-105 flex-shrink-0"
+          >
+            全部
+          </button>
+        </div>
+
+        <!-- Cards -->
+        <div
+          id="card-grid"
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20"
+        >
+          <!-- JS 渲染 -->
+        </div>
+      </section>
+
+      <!-- Repository -->
+      <section
+        id="view-repository"
+        class="view-section hidden p-6 lg:p-10 max-w-7xl mx-auto"
+      >
+        <div class="flex justify-between items-center mb-6">
+          <h1 class="text-2xl font-bold text-slate-900">知识库</h1>
+          <div class="flex gap-2" id="repo-status-filters">
+            <button
+              data-status-filter="all"
+              class="status-filter-btn px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              全部
+            </button>
+            <button
+              data-status-filter="pending"
+              class="status-filter-btn px-3 py-1.5 text-xs font-medium bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              待处理
+            </button>
+            <button
+              data-status-filter="processed"
+              class="status-filter-btn px-3 py-1.5 text-xs font-medium bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              已处理
+            </button>
+          </div>
+        </div>
+        <div
+          class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"
+        >
+          <div class="p-4 border-b border-slate-100 flex justify-between">
+            <input
+              id="repo-search-input"
+              type="text"
+              placeholder="搜索标题 / 内容 / 标签..."
+              class="w-full max-w-sm border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+          <table class="min-w-full divide-y divide-slate-200">
+            <thead class="bg-slate-50">
+              <tr>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  标题
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  类型
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  添加时间
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  状态
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              class="bg-white divide-y divide-slate-200"
+              id="repo-list"
+            ></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Archive -->
+      <section
+        id="view-archive"
+        class="view-section hidden p-6 lg:p-10 max-w-7xl mx-auto"
+      >
+        <div class="flex justify-between items-center mb-6">
+          <div>
+            <h1 class="text-2xl font-bold text-slate-900">归档</h1>
+            <p class="text-sm text-slate-500 mt-1">已归档的内容可以恢复或永久删除</p>
+          </div>
+        </div>
+        <div
+          class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"
+        >
+          <div class="p-4 border-b border-slate-100 flex justify-between">
+            <input
+              id="archive-search-input"
+              type="text"
+              placeholder="搜索标题 / 内容 / 标签..."
+              class="w-full max-w-sm border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+          <table class="min-w-full divide-y divide-slate-200">
+            <thead class="bg-slate-50">
+              <tr>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  标题
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  类型
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  归档时间
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+                >
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              class="bg-white divide-y divide-slate-200"
+              id="archive-list"
+            ></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tags -->
+      <section
+        id="view-tags"
+        class="view-section hidden p-6 lg:p-10 max-w-7xl mx-auto"
+      >
+        <div class="flex justify-between items-center mb-6">
+          <h1 class="text-2xl font-bold text-slate-900">标签管理</h1>
+        </div>
+        <div
+          class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"
+          id="tags-container"
+        >
+          <!-- 标签云由 JS 渲染 -->
+        </div>
+      </section>
+
+      <!-- Detail Split View -->
+      <section
+        id="view-detail"
+        class="absolute inset-0 bg-white flex hidden z-30"
+      >
+        <div class="absolute top-4 left-4 z-40">
+          <button
+            id="btn-close-detail"
+            class="w-10 h-10 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 shadow-lg transition-all hover:scale-110"
+          >
+            <i class="fa-solid fa-arrow-left"></i>
+          </button>
+        </div>
+
+        <!-- Left: Content -->
+        <div
+          class="w-full lg:w-3/5 h-full overflow-y-auto border-r border-slate-200 bg-slate-50"
+        >
+          <div class="max-w-3xl mx-auto px-6 lg:px-12 py-16">
+            <div id="detail-content-container"></div>
+          </div>
+        </div>
+
+        <!-- Right: AI Workspace -->
+        <aside
+          class="hidden lg:flex w-2/5 h-full flex-col bg-white shadow-xl z-30"
+        >
+          <div
+            class="px-6 py-4 border-b border-slate-100 bg-white sticky top-0 z-10"
+          >
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center">
+                <div
+                  class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-sm ring-2 ring-indigo-50"
+                >
+                  <i class="fa-solid fa-sparkles text-sm"></i>
+                </div>
+                <div class="ml-3">
+                  <h3 class="text-sm font-bold text-slate-800">AI 助手</h3>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="chat-history"
+            class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30"
+          ></div>
+
+          <div class="p-4 border-t border-slate-200 bg-white">
+            <!-- 统一的输入区域 -->
+            <div
+              class="relative rounded-2xl bg-white border border-slate-200 shadow-sm transition-all"
+              id="chat-input-container"
+            >
+              <!-- 快捷操作栏 - 集成到输入框内部 -->
+              <div class="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-slate-100">
+                <button
+                  id="btn-generate-summary"
+                  class="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/50 rounded-lg transition-all flex items-center shadow-sm hover:shadow hover:scale-105 active:scale-95"
+                >
+                  <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> 生成摘要
+                </button>
+              </div>
+              <!-- 输入框和发送按钮 -->
+              <div class="flex items-center px-1 pb-1">
+                <textarea
+                  id="chat-input"
+                  rows="1"
+                  class="flex-1 border-0 bg-transparent py-3.5 pl-5 pr-3 text-slate-900 placeholder:text-slate-400 focus:ring-0 focus:outline-none sm:text-sm resize-none leading-relaxed overflow-y-auto transition-colors"
+                  placeholder="输入问题，Ctrl + Enter 发送..."
+                  style="min-height: 44px; max-height: 200px;"
+                ></textarea>
+                <button
+                  id="btn-send-chat"
+                  class="p-2.5 bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-700 text-white rounded-xl hover:from-indigo-700 hover:via-indigo-700 hover:to-indigo-800 transition-all shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex-shrink-0"
+                  title="发送消息 (Ctrl + Enter)"
+                >
+                  <i class="fa-solid fa-paper-plane text-xs"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+  </main>
+
+  <!-- Context Edit Modal -->
+  <div
+    id="context-modal"
+    class="fixed inset-0 bg-black/40 hidden z-50 items-center justify-center"
+  >
+    <div
+      class="glass w-full max-w-md rounded-2xl shadow-2xl p-6 transform transition-all duration-200 scale-95 opacity-0"
+      id="context-content"
+    >
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-900">设置项目背景信息</h2>
+        <button
+          id="btn-close-context"
+          class="text-slate-400 hover:text-slate-600"
+        >
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-700 mb-1"
+            for="input-context-stage"
+            >创业阶段 <span class="text-red-500">*</span></label
+          >
+          <select
+            id="input-context-stage"
+            class="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="">请选择</option>
+            <option value="0到1阶段">0到1阶段</option>
+            <option value="1到10阶段">1到10阶段</option>
+            <option value="10到n阶段">10到n阶段</option>
+            <option value="初创期">初创期</option>
+            <option value="成长期">成长期</option>
+            <option value="成熟期">成熟期</option>
+            <option value="__custom__">自定义</option>
+          </select>
+          <input
+            type="text"
+            id="input-context-stage-custom"
+            class="hidden mt-2 block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500"
+            placeholder="请输入自定义阶段"
+          />
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-700 mb-1"
+            for="input-context-team-size"
+            >团队规模 <span class="text-red-500">*</span></label
+          >
+          <div class="flex items-center gap-2">
+            <input
+              type="number"
+              id="input-context-team-size"
+              min="1"
+              step="1"
+              class="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="例如：3"
+            />
+            <span class="text-sm text-slate-600 whitespace-nowrap">人</span>
+          </div>
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-700 mb-1"
+            for="input-context-industry"
+            >行业（可选）</label
+          >
+          <input
+            type="text"
+            id="input-context-industry"
+            class="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500"
+            placeholder="例如：互联网、电商、教育等"
+          />
+        </div>
+      </div>
+
+      <p
+        id="context-message"
+        class="mt-4 text-xs text-red-500 min-h-[1.25rem]"
+      ></p>
+
+      <div class="mt-6 flex justify-end gap-3">
+        <button
+          id="btn-cancel-context"
+          class="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          取消
+        </button>
+        <button
+          id="btn-save-context"
+          class="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all"
+        >
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div
+    id="settings-modal"
+    class="fixed inset-0 bg-black/40 hidden z-50 items-center justify-center"
+  >
+    <div
+      class="glass w-full max-w-md rounded-2xl shadow-2xl p-6 transform transition-all duration-200 scale-95 opacity-0"
+      id="settings-content"
+    >
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-900">设置</h2>
+        <button
+          id="btn-close-settings"
+          class="text-slate-400 hover:text-slate-600"
+        >
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-700 mb-1"
+            for="input-api-key"
+            >DeepSeek API Key</label
+          >
+          <div class="relative">
+            <input
+              type="password"
+              id="input-api-key"
+              class="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="sk-..."
+            />
+            <button
+              id="btn-toggle-api-key"
+              class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+            >
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">
+            在
+            <a
+              href="https://platform.deepseek.com"
+              target="_blank"
+              class="text-indigo-600 hover:underline"
+              >DeepSeek 平台</a
+            >
+            获取 API Key。
+          </p>
+        </div>
+
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-700 mb-1"
+            for="select-model"
+            >模型</label
+          >
+          <select
+            id="select-model"
+            class="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="deepseek-chat">deepseek-chat（推荐）</option>
+            <option value="deepseek-coder">deepseek-coder</option>
+          </select>
+        </div>
+
+        <div class="flex items-center justify-between py-3 border-t">
+          <div>
+            <p class="text-sm font-medium text-slate-900">数据导出</p>
+            <p class="text-xs text-slate-500">备份你的知识数据</p>
+          </div>
+          <div class="space-x-2">
+            <button
+              id="btn-export-json"
+              class="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              导出 JSON
+            </button>
+            <button
+              id="btn-export-md"
+              class="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              导出 Markdown
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-between items-center">
+        <button
+          id="btn-test-api"
+          class="px-3 py-2 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          测试连接
+        </button>
+        <button
+          id="btn-save-settings"
+          class="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all"
+        >
+          保存设置
+        </button>
+      </div>
+
+      <p
+        id="settings-message"
+        class="mt-3 text-xs text-slate-500 min-h-[1.25rem]"
+      ></p>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div
+    id="toast-container"
+    class="fixed bottom-6 right-6 z-[60] flex flex-col space-y-2 pointer-events-none"
+  ></div>
+
+  <script type="module" src="./js/ui.js"></script>
+  <script type="module" src="./js/migrate-to-uncategorized.js"></script>
+  <!-- 提前定义editContext，确保在HTML解析时可用 -->
+  <script>
+    // 提前定义editContext，避免模块加载延迟导致的错误
+    window.editContext = function() {
+      // 如果openContextModal已定义，直接调用
+      if (typeof window.openContextModal === 'function') {
+        window.openContextModal();
+      } else {
+        // 否则等待一下再试
+        setTimeout(() => {
+          if (typeof window.openContextModal === 'function') {
+            window.openContextModal();
+          } else {
+            console.error('openContextModal not available');
+            alert('功能加载中，请稍后再试');
+          }
+        }, 100);
+      }
+    };
+  </script>
+  <script type="module">
+    // 初始化Lucide图标
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+    
+    // 更新Context标签
+    async function updateContextLabel() {
+      try {
+        const { formatContextLabel, isContextSet } = await import('./js/context.js');
+        const labelEl = document.getElementById('context-label-text');
+        const labelContainer = document.getElementById('context-label');
+        
+        if (labelEl) {
+          const labelText = formatContextLabel();
+          labelEl.textContent = labelText;
+          
+          // 根据是否设置调整样式
+          if (labelContainer) {
+            const isSet = isContextSet();
+            if (isSet) {
+              labelContainer.classList.remove('bg-slate-100', 'text-slate-600');
+              labelContainer.classList.add('bg-indigo-50', 'text-indigo-700');
+              labelContainer.title = '点击编辑项目背景信息';
+            } else {
+              labelContainer.classList.remove('bg-indigo-50', 'text-indigo-700');
+              labelContainer.classList.add('bg-slate-100', 'text-slate-600');
+              labelContainer.title = '点击设置项目背景信息';
+            }
+          }
+        }
+      } catch (error) {
+        console.error('更新Context标签失败:', error);
+      }
+    }
+    
+    // 打开Context编辑模态框
+    window.openContextModal = async function() {
+      try {
+        const { getCurrentContext } = await import('./js/context.js');
+        const current = getCurrentContext();
+        
+        const modal = document.getElementById('context-modal');
+        const content = document.getElementById('context-content');
+        const stageSelect = document.getElementById('input-context-stage');
+        const stageCustomInput = document.getElementById('input-context-stage-custom');
+        const teamSizeInput = document.getElementById('input-context-team-size');
+        const industryInput = document.getElementById('input-context-industry');
+        const messageEl = document.getElementById('context-message');
+        
+        // 填充当前值
+        if (current.stage) {
+          // 检查是否是预设选项
+          const presetOptions = ['0到1阶段', '1到10阶段', '10到n阶段', '初创期', '成长期', '成熟期'];
+          if (presetOptions.includes(current.stage)) {
+            stageSelect.value = current.stage;
+            stageCustomInput.classList.add('hidden');
+          } else {
+            stageSelect.value = '__custom__';
+            stageCustomInput.value = current.stage;
+            stageCustomInput.classList.remove('hidden');
+          }
+        } else {
+          stageSelect.value = '';
+          stageCustomInput.classList.add('hidden');
+        }
+        
+        teamSizeInput.value = current.teamSize || '';
+        industryInput.value = current.industry || '';
+        messageEl.textContent = '';
+        
+        // 移除旧的事件监听器（避免重复绑定）
+        const newStageSelect = stageSelect.cloneNode(true);
+        stageSelect.parentNode.replaceChild(newStageSelect, stageSelect);
+        
+        // 重新获取引用
+        const updatedStageSelect = document.getElementById('input-context-stage');
+        const updatedStageCustomInput = document.getElementById('input-context-stage-custom');
+        
+        // 重新设置值（因为cloneNode会丢失value）
+        if (current.stage) {
+          const presetOptions = ['0到1阶段', '1到10阶段', '10到n阶段', '初创期', '成长期', '成熟期'];
+          if (presetOptions.includes(current.stage)) {
+            updatedStageSelect.value = current.stage;
+            updatedStageCustomInput.classList.add('hidden');
+          } else {
+            updatedStageSelect.value = '__custom__';
+            updatedStageCustomInput.value = current.stage;
+            updatedStageCustomInput.classList.remove('hidden');
+          }
+        } else {
+          updatedStageSelect.value = '';
+          updatedStageCustomInput.classList.add('hidden');
+        }
+        
+        // 处理自定义选项切换
+        updatedStageSelect.addEventListener('change', function() {
+          if (this.value === '__custom__') {
+            updatedStageCustomInput.classList.remove('hidden');
+            updatedStageCustomInput.focus();
+          } else {
+            updatedStageCustomInput.classList.add('hidden');
+            updatedStageCustomInput.value = '';
+          }
+        });
+        
+        // 显示模态框
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        requestAnimationFrame(() => {
+          content.classList.remove('opacity-0', 'scale-95');
+          content.classList.add('opacity-100', 'scale-100');
+        });
+      } catch (error) {
+        console.error('打开Context编辑模态框失败:', error);
+      }
+    };
+    
+    // 关闭Context编辑模态框
+    window.closeContextModal = function() {
+      const modal = document.getElementById('context-modal');
+      const content = document.getElementById('context-content');
+      
+      content.classList.remove('opacity-100', 'scale-100');
+      content.classList.add('opacity-0', 'scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }, 160);
+    };
+    
+    // 保存Context
+    window.saveContext = async function() {
+      try {
+        const { setContext, validateContext } = await import('./js/context.js');
+        const stageSelect = document.getElementById('input-context-stage');
+        const stageCustomInput = document.getElementById('input-context-stage-custom');
+        const teamSizeInput = document.getElementById('input-context-team-size');
+        const industryInput = document.getElementById('input-context-industry');
+        const messageEl = document.getElementById('context-message');
+        
+        // 获取阶段值
+        let stage = stageSelect.value;
+        if (stage === '__custom__') {
+          stage = stageCustomInput.value.trim();
+        }
+        
+        // 获取团队规模
+        const teamSize = parseInt(teamSizeInput.value, 10);
+        
+        // 获取行业
+        const industry = industryInput.value.trim();
+        
+        // 验证
+        const validation = validateContext({ stage, teamSize, industry });
+        if (!validation.valid) {
+          messageEl.textContent = validation.errors.join('，');
+          return;
+        }
+        
+        // 保存
+        await setContext({ stage, teamSize, industry });
+        
+        // 更新显示
+        await updateContextLabel();
+        
+        // 关闭模态框
+        closeContextModal();
+      } catch (error) {
+        console.error('保存Context失败:', error);
+        const messageEl = document.getElementById('context-message');
+        if (messageEl) {
+          messageEl.textContent = '保存失败，请重试';
+        }
+      }
+    };
+    
+    // 更新editContext函数（在openContextModal定义后，确保直接调用）
+    window.editContext = function() {
+      window.openContextModal();
+    };
+    
+    // 绑定Context模态框事件
+    document.addEventListener('DOMContentLoaded', () => {
+      const contextModal = document.getElementById('context-modal');
+      const btnCloseContext = document.getElementById('btn-close-context');
+      const btnCancelContext = document.getElementById('btn-cancel-context');
+      const btnSaveContext = document.getElementById('btn-save-context');
+      
+      if (contextModal) {
+        contextModal.addEventListener('click', (e) => {
+          if (e.target === contextModal) closeContextModal();
+        });
+      }
+      if (btnCloseContext) {
+        btnCloseContext.addEventListener('click', closeContextModal);
+      }
+      if (btnCancelContext) {
+        btnCancelContext.addEventListener('click', closeContextModal);
+      }
+      if (btnSaveContext) {
+        btnSaveContext.addEventListener('click', saveContext);
+      }
+      
+      // 支持Enter键保存
+      const stageSelect = document.getElementById('input-context-stage');
+      const stageCustomInput = document.getElementById('input-context-stage-custom');
+      const teamSizeInput = document.getElementById('input-context-team-size');
+      const industryInput = document.getElementById('input-context-industry');
+      
+      [stageSelect, stageCustomInput, teamSizeInput, industryInput].forEach(input => {
+        if (input) {
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              saveContext();
+            }
+          });
+        }
+      });
+    });
+    
+    // PDF上传
+    document.addEventListener('DOMContentLoaded', () => {
+      const uploadBtn = document.getElementById('btn-upload-pdf');
+      if (uploadBtn) {
+        uploadBtn.addEventListener('click', async () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.pdf';
+          input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            try {
+              uploadBtn.disabled = true;
+              const originalHtml = uploadBtn.innerHTML;
+              uploadBtn.innerHTML = '上传中...';
+              
+              // 直接上传，不选择模块
+              const { uploadPDF } = await import('./js/pdf.js');
+              const result = await uploadPDF(file, null);
+              
+              // 重新加载PDF列表
+              const consultationModule = await import('./js/consultation.js');
+              await consultationModule.loadPDFList();
+              
+              alert('PDF上传成功！');
+              
+              uploadBtn.disabled = false;
+              uploadBtn.innerHTML = originalHtml;
+              if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+              }
+            } catch (error) {
+              console.error('上传失败:', error);
+              alert('上传失败: ' + error.message);
+              uploadBtn.disabled = false;
+              uploadBtn.innerHTML = '<i data-lucide="upload" size="12"></i> 上传参考文档';
+              if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+              }
+            }
+          };
+          input.click();
+        });
+      }
+      
+      // 模块选择器函数
+      async function showModuleSelector() {
+        return new Promise(async (resolve) => {
+          try {
+            // 先检查知识库是否初始化
+            const kbModule = await import('./js/knowledge-bases.js');
+            let currentKbId = kbModule.getCurrentKnowledgeBaseId();
+            
+            if (!currentKbId) {
+              // 尝试初始化知识库
+              try {
+                const initSuccess = await kbModule.initKnowledgeBases();
+                currentKbId = kbModule.getCurrentKnowledgeBaseId();
+                
+                if (!initSuccess || !currentKbId) {
+                  // 知识库未初始化，可能是数据库未迁移
+                  const shouldContinue = confirm(
+                    '知识库系统未初始化。\n\n' +
+                    '如果这是首次使用多知识库功能，请先运行数据库迁移：\n' +
+                    'npm run migrate-kb\n\n' +
+                    '是否继续上传（不关联知识库和模块）？'
+                  );
+                  resolve(null);
+                  return;
+                }
+              } catch (e) {
+                console.warn('初始化知识库失败:', e);
+                const shouldContinue = confirm('知识库系统初始化失败，是否继续上传（不关联知识库和模块）？');
+                resolve(null);
+                return;
+              }
+            }
+            
+            // 检查模块是否已加载
+            const modulesModule = await import('./js/modules.js');
+            let modules = modulesModule.moduleState?.groupedModules || [];
+            
+            if (modules.length === 0) {
+              // 尝试初始化模块
+              try {
+                await modulesModule.initModules();
+                modules = modulesModule.moduleState?.groupedModules || [];
+              } catch (e) {
+                console.warn('初始化模块失败:', e);
+              }
+              
+              if (modules.length === 0) {
+                // 当前知识库没有模块，允许上传但不关联模块
+                if (confirm('当前知识库没有模块，是否继续上传（不关联模块）？')) {
+                  resolve(null);
+                } else {
+                  resolve(null);
+                }
+                return;
+              }
+            }
+            
+            // 创建模态对话框
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+              <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+                <div class="p-6 border-b border-slate-200">
+                  <h2 class="text-lg font-bold text-slate-900">选择模块</h2>
+                  <p class="text-sm text-slate-500 mt-1">请选择此文档所属的模块关卡</p>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4">
+                  <div class="space-y-2" id="module-selector-list">
+                    ${modules.map(step => `
+                      <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <button 
+                          onclick="toggleModuleStep('step-select-${step.stepNumber}')"
+                          class="w-full px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                        >
+                          <span>第${step.stepNumber}步：${step.stepName}</span>
+                          <i data-lucide="chevron-down" size="16" class="text-slate-400"></i>
+                        </button>
+                        <div id="step-select-${step.stepNumber}" class="hidden border-t border-slate-200">
+                          ${step.checkpoints.map(cp => `
+                            <button
+                              onclick="selectModule('${cp.id}')"
+                              class="w-full px-4 py-2 text-left text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                            >
+                              ${cp.checkpoint_number}. ${cp.checkpoint_name}
+                            </button>
+                          `).join('')}
+                        </div>
+                      </div>
+                    `).join('')}
+                    <button
+                      onclick="selectModule(null)"
+                      class="w-full px-3 py-2 text-left text-sm text-slate-500 hover:bg-slate-50 rounded border border-slate-200 mt-2"
+                    >
+                      不关联模块
+                    </button>
+                  </div>
+                </div>
+                <div class="p-4 border-t border-slate-200 flex justify-end gap-2">
+                  <button
+                    onclick="closeModuleSelector()"
+                    class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // 初始化图标
+            if (window.lucide) {
+              lucide.createIcons(modal);
+            }
+            
+            // 全局函数
+            window.selectModule = (moduleId) => {
+              document.body.removeChild(modal);
+              resolve(moduleId);
+              delete window.selectModule;
+              delete window.closeModuleSelector;
+              delete window.toggleModuleStep;
+            };
+            
+            window.closeModuleSelector = () => {
+              document.body.removeChild(modal);
+              resolve(null);
+              delete window.selectModule;
+              delete window.closeModuleSelector;
+              delete window.toggleModuleStep;
+            };
+            
+            window.toggleModuleStep = (stepId) => {
+              const element = document.getElementById(stepId);
+              if (!element) return;
+              element.classList.toggle('hidden');
+              
+              const button = element.previousElementSibling;
+              const icon = button.querySelector('[data-lucide]');
+              if (icon) {
+                const isExpanded = !element.classList.contains('hidden');
+                icon.setAttribute('data-lucide', isExpanded ? 'chevron-up' : 'chevron-down');
+                if (window.lucide) {
+                  lucide.createIcons(button);
+                }
+              }
+            };
+          } catch (error) {
+            console.error('显示模块选择器失败:', error);
+            resolve(null);
+          }
+        });
+      }
+      
+      window.showModuleSelector = showModuleSelector;
+      
+      // 确保 showModuleSwitcher 可用
+      window.showModuleSwitcher = async function() {
+        try {
+          const modulesModule = await import('./js/modules.js');
+          if (modulesModule.showModuleSwitcher) {
+            await modulesModule.showModuleSwitcher();
+          }
+        } catch (error) {
+          console.error('加载模块切换器失败:', error);
+        }
+      };
+      
+      // 确保 startConversation 可用
+      window.startConversation = async function(question = null) {
+        try {
+          const consultationModule = await import('./js/consultation.js');
+          if (consultationModule.startConversation) {
+            await consultationModule.startConversation(question);
+          }
+        } catch (error) {
+          console.error('加载对话模块失败:', error);
+        }
+      };
+    });
+  </script>
+</body>
+</html>
+
+
+

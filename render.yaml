@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: knowledge-manager
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/database/knowledge.db
+    disk:
+      name: knowledge-db
+      mountPath: /opt/render/project/src/database
+      sizeGB: 1
+
