@@ -1,3 +1,15 @@
+// 检查是否使用PostgreSQL
+const DATABASE_URL = process.env.DATABASE_URL;
+const DB_TYPE = process.env.DB_TYPE;
+
+if (DATABASE_URL || DB_TYPE === 'postgres') {
+  // 使用PostgreSQL初始化
+  console.log('检测到PostgreSQL配置，使用PostgreSQL初始化脚本...');
+  require('./init-db-pg');
+  process.exit(0);
+}
+
+// 使用SQLite初始化（向后兼容）
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');

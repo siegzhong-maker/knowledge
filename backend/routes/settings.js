@@ -47,10 +47,11 @@ router.put('/', async (req, res) => {
 
       if (apiKey) {
         const encrypted = encryptToString(apiKey);
-        await db.run(
-          'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-          ['deepseek_api_key', encrypted]
-        );
+        // 使用兼容SQLite和PostgreSQL的语法
+        const sql = process.env.DATABASE_URL 
+          ? 'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2'
+          : 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)';
+        await db.run(sql, ['deepseek_api_key', encrypted]);
       } else {
         // 清空API Key
         await db.run('DELETE FROM settings WHERE key = ?', ['deepseek_api_key']);
@@ -58,17 +59,17 @@ router.put('/', async (req, res) => {
     }
 
     if (model !== undefined) {
-      await db.run(
-        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-        ['deepseek_model', model]
-      );
+      const sql = process.env.DATABASE_URL 
+        ? 'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2'
+        : 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)';
+      await db.run(sql, ['deepseek_model', model]);
     }
 
     if (darkMode !== undefined) {
-      await db.run(
-        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-        ['dark_mode', darkMode.toString()]
-      );
+      const sql = process.env.DATABASE_URL 
+        ? 'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2'
+        : 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)';
+      await db.run(sql, ['dark_mode', darkMode.toString()]);
     }
 
     res.json({ success: true, message: '设置已保存' });

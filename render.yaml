@@ -10,10 +10,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/database/knowledge.db
-    disk:
-      name: knowledge-db
-      mountPath: /opt/render/project/src/database
-      sizeGB: 1
+      # DATABASE_URL 需要从 Supabase 获取，在 Render 控制台中手动配置
+      # 格式：postgresql://user:password@host:port/database
+      # 或使用环境变量链接：envVarKey: DATABASE_URL
 

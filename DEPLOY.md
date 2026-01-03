@@ -12,10 +12,20 @@
 
 ## Render 部署步骤（推荐免费方案）
 
+### 前置条件：设置 Supabase 数据库
+
+⚠️ **重要**：Render 免费套餐不支持持久化磁盘，需要使用外部数据库服务。
+
+1. **设置 Supabase 数据库**（免费，无需信用卡）
+   - 详细步骤请参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)
+   - 获取数据库连接字符串（DATABASE_URL）
+   - 格式：`postgresql://user:password@host:port/database`
+
 ### 1. 准备工作
 
 1. 在 [Render](https://render.com) 注册账号（免费）
 2. 将代码推送到 GitHub 仓库（如果没有的话）
+3. 完成 Supabase 数据库设置并获取 DATABASE_URL
 
 ### 2. 部署到 Render
 
@@ -24,11 +34,18 @@
 1. 确保项目中已有 `render.yaml` 配置文件
 2. 在 Render 控制台：
    - 点击 "New +" > "Blueprint"
-   - 连接到你的 GitHub 仓库
-   - 选择包含 `render.yaml` 的分支
+   - 连接到你的 GitHub 仓库：`siegzhong-maker/knowledge`
+   - 选择包含 `render.yaml` 的分支（通常是 `main`）
    - Render 会自动读取配置文件并创建服务
 
-3. 部署完成后，Render 会提供一个公网 URL，如：`https://knowledge-manager.onrender.com`
+3. **配置 DATABASE_URL 环境变量**（重要）：
+   - 在服务设置中找到 "Environment" 标签
+   - 点击 "Add Environment Variable"
+   - 添加：
+     - **Key**: `DATABASE_URL`
+     - **Value**: 从 Supabase 获取的连接字符串（参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)）
+
+4. 部署完成后，Render 会提供一个公网 URL，如：`https://knowledge-manager.onrender.com`
 
 #### 方式二：通过控制台手动配置
 
@@ -49,27 +66,25 @@
 
 3. 配置环境变量：
    - `NODE_ENV`: `production`
-   - `DATABASE_PATH`: `/opt/render/project/src/database/knowledge.db`
+   - `DATABASE_URL`: **必须配置** - 从 Supabase 获取的 PostgreSQL 连接字符串（参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)）
    - `CORS_ORIGIN`: 如果需要限制CORS来源，设置此变量（可选）
 
-4. **添加持久化磁盘（重要）**：
-   - 在服务设置中找到 "Disks" 部分
-   - 点击 "Add Disk"
-   - **Name**: knowledge-db
-   - **Mount Path**: `/opt/render/project/src/database`
-   - **Size**: 1 GB（免费套餐足够使用）
-   - ⚠️ **注意**：只有挂载路径内的文件会持久化（数据库文件会保存）
-   - ⚠️ **文件上传限制**：`backend/uploads/` 目录不在持久化磁盘内，上传的PDF文件在应用重启后会丢失。如需持久化上传文件，建议使用外部存储服务（如 AWS S3）或升级到付费套餐
+4. 点击 "Create Web Service" 完成创建
 
-5. 点击 "Create Web Service" 完成创建
+5. **初始化数据库**：
+   - 部署完成后，数据库会自动初始化
+   - 如果需要手动初始化，在 "Shell" 标签中运行：`npm run init-db`
 
 ### 3. 初始化数据库
 
-部署后首次访问时，数据库会自动创建。如果需要手动初始化：
+部署后，数据库会自动初始化（通过 `postinstall` 脚本）。
+
+如果需要手动初始化：
 
 1. 在 Render 控制台的服务页面
 2. 打开 "Shell" 标签
 3. 运行：`npm run init-db`
+4. 检查输出，确认所有表创建成功
 
 ### 4. 访问应用
 
@@ -83,9 +98,14 @@
 - ✅ **完全免费**，无需信用卡
 - ⏰ **休眠机制**：应用在 15 分钟无活动后会自动休眠
 - 🚀 **唤醒时间**：首次访问休眠的应用需要等待 30-60 秒
-- 💾 **持久化存储**：数据库文件会保存（通过持久化磁盘），不会丢失
-- 📁 **文件上传限制**：`backend/uploads/` 目录不在持久化磁盘内，上传的PDF文件在应用重启后会丢失
+- 💾 **数据库持久化**：使用 Supabase 免费 PostgreSQL 数据库，数据永久保存（500MB 免费存储）
+- 📁 **文件上传限制**：上传的文件在应用重启后会丢失（可使用 Supabase Storage 或其他对象存储服务）
 - 📊 **资源限制**：免费套餐有资源使用限制，但对于 3-5 人的小团队足够使用
+- 💡 **适用场景**：适合个人项目、小团队使用，数据完全持久化
+
+**数据库方案**：
+- 使用 Supabase 免费 PostgreSQL 数据库（推荐）
+- 或升级到 Render 付费套餐使用持久化磁盘
 
 **避免休眠的技巧**：
 - 使用定时服务（如 UptimeRobot）定期访问你的应用，保持活跃
@@ -360,9 +380,9 @@ server {
 - 前端：直接打开 `frontend/index.html` 或访问 `http://localhost:3000`
 - API：`http://localhost:3000/api`
 
-### 生产环境（Render）
-- 数据库：`/opt/render/project/src/database/knowledge.db`（持久化磁盘）
-- 上传文件：`backend/uploads/`（⚠️ 注意：免费套餐下，上传文件在应用重启后会丢失，建议使用外部存储）
+### 生产环境（Render + Supabase）
+- 数据库：Supabase PostgreSQL（通过 DATABASE_URL 环境变量连接）
+- 上传文件：`backend/uploads/`（⚠️ 注意：免费套餐下，上传文件在应用重启后会丢失，建议使用 Supabase Storage 或其他对象存储服务）
 - 前端：通过 Render URL 访问
 - API：通过 Render URL + `/api` 访问
 
