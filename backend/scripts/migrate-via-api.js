@@ -33,26 +33,30 @@ if (!apiUrl) {
   process.exit(1);
 }
 
-// HTTP 请求函数
-function makeRequest(url, data) {
+// HTTP 请求函数（带超时）
+function makeRequest(url, data, timeout = 120000) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const isHttps = urlObj.protocol === 'https:';
     const httpModule = isHttps ? https : http;
     
     const postData = JSON.stringify(data);
+    const dataSize = Buffer.byteLength(postData);
+    console.log(`  正在上传数据 (${(dataSize / 1024 / 1024).toFixed(2)} MB)...`);
     
     const options = {
       hostname: urlObj.hostname,
       port: urlObj.port || (isHttps ? 443 : 80),
       path: urlObj.pathname,
       method: 'POST',
+      timeout: timeout,
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': dataSize
       }
     };
 
+    let timeoutId = null;
     const req = httpModule.request(options, (res) => {
       let responseData = '';
 
@@ -61,6 +65,7 @@ function makeRequest(url, data) {
       });
 
       res.on('end', () => {
+        if (timeoutId) clearTimeout(timeoutId);
         try {
           const jsonData = JSON.parse(responseData);
           if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -79,8 +84,21 @@ function makeRequest(url, data) {
     });
 
     req.on('error', (error) => {
+      if (timeoutId) clearTimeout(timeoutId);
       reject(error);
     });
+
+    req.on('timeout', () => {
+      req.destroy();
+      if (timeoutId) clearTimeout(timeoutId);
+      reject(new Error(`请求超时 (${timeout / 1000} 秒)`));
+    });
+
+    // 设置超时
+    timeoutId = setTimeout(() => {
+      req.destroy();
+      reject(new Error(`请求超时 (${timeout / 1000} 秒)`));
+    }, timeout);
 
     req.write(postData);
     req.end();
@@ -152,6 +170,8 @@ async function migrate() {
 
     // 通过 API 上传数据
     console.log('3. 通过 API 上传数据到 PostgreSQL...');
+    console.log('   (这可能需要一些时间，请耐心等待...)\n');
+    
     const migrateData = {
       knowledge_bases,
       modules,
@@ -161,7 +181,7 @@ async function migrate() {
       user_contexts
     };
 
-    const result = await makeRequest(`${apiUrl}/api/migrate/upload`, migrateData);
+    const result = await makeRequest(`${apiUrl}/api/migrate/upload`, migrateData, 180000); // 3分钟超时
     
     console.log('\n✓ 数据迁移完成！');
     console.log('\n迁移统计：');
