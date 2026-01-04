@@ -183,25 +183,28 @@ export async function initConsultation() {
     // 绑定上传按钮事件监听器
     setupUploadButton();
     
-    // 绑定评估快速开关
-    const toggleEvaluationQuick = document.getElementById('toggle-evaluation-quick');
-    if (toggleEvaluationQuick) {
+    // 绑定评估快速开关（可能有多个按钮）
+    const toggleEvaluationQuickButtons = document.querySelectorAll('#toggle-evaluation-quick');
+    if (toggleEvaluationQuickButtons.length > 0) {
       // 初始化图标状态
       updateEvaluationQuickToggle();
       
-      toggleEvaluationQuick.addEventListener('click', () => {
-        const currentValue = localStorage.getItem('knowledge_relevance_evaluation_enabled');
-        const newValue = currentValue === 'true' ? 'false' : 'true';
-        localStorage.setItem('knowledge_relevance_evaluation_enabled', newValue);
-        updateEvaluationQuickToggle();
-        
-        // 显示提示
-        const status = newValue === 'true' ? '已启用' : '已禁用';
-        const toast = document.createElement('div');
-        toast.className = 'fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm';
-        toast.textContent = `相关性评估${status}`;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2000);
+      // 为所有按钮绑定事件
+      toggleEvaluationQuickButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          const currentValue = localStorage.getItem('knowledge_relevance_evaluation_enabled');
+          const newValue = currentValue === 'true' ? 'false' : 'true';
+          localStorage.setItem('knowledge_relevance_evaluation_enabled', newValue);
+          updateEvaluationQuickToggle();
+          
+          // 显示提示
+          const status = newValue === 'true' ? '已启用' : '已禁用';
+          const toast = document.createElement('div');
+          toast.className = 'fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm';
+          toast.textContent = `相关性评估${status}`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 2000);
+        });
       });
     }
     
@@ -4058,25 +4061,31 @@ window.showDocContextMenu = function(event, docId) {
 
 // 更新评估快速开关的图标状态
 function updateEvaluationQuickToggle() {
-  const toggleBtn = document.getElementById('toggle-evaluation-quick');
-  const iconEl = document.getElementById('evaluation-icon');
-  if (!toggleBtn || !iconEl) return;
+  const toggleButtons = document.querySelectorAll('#toggle-evaluation-quick');
+  const iconElements = document.querySelectorAll('#evaluation-icon');
+  
+  if (toggleButtons.length === 0 || iconElements.length === 0) return;
   
   const sessionValue = localStorage.getItem('knowledge_relevance_evaluation_enabled');
   const isEnabled = sessionValue === null || sessionValue === 'true'; // 默认启用
   
-  if (isEnabled) {
-    toggleBtn.classList.remove('text-slate-400');
-    toggleBtn.classList.add('text-indigo-600', 'bg-indigo-50');
-    iconEl.setAttribute('data-lucide', 'bar-chart-2');
-  } else {
-    toggleBtn.classList.remove('text-indigo-600', 'bg-indigo-50');
-    toggleBtn.classList.add('text-slate-400');
-    iconEl.setAttribute('data-lucide', 'bar-chart-2');
-  }
-  
-  if (window.lucide) {
-    lucide.createIcons(iconEl);
-  }
+  // 更新所有按钮和图标
+  toggleButtons.forEach((toggleBtn, index) => {
+    const iconEl = iconElements[index] || iconElements[0]; // 如果索引不匹配，使用第一个图标
+    
+    if (isEnabled) {
+      toggleBtn.classList.remove('text-slate-400');
+      toggleBtn.classList.add('text-indigo-600', 'bg-indigo-50');
+      if (iconEl) iconEl.setAttribute('data-lucide', 'bar-chart-2');
+    } else {
+      toggleBtn.classList.remove('text-indigo-600', 'bg-indigo-50');
+      toggleBtn.classList.add('text-slate-400');
+      if (iconEl) iconEl.setAttribute('data-lucide', 'bar-chart-2');
+    }
+    
+    if (window.lucide && iconEl) {
+      lucide.createIcons(iconEl);
+    }
+  });
 }
 
