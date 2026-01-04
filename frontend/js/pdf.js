@@ -117,6 +117,9 @@ export async function renderPDFContent(pdfData, container) {
   });
   
   if (pdfData.type === 'pdf' && pdfData.file_path) {
+    // 在try块外定义pdfUrl，以便在catch块中使用
+    let pdfUrl = null;
+    
     try {
       // 构建PDF文件URL
       const pdfId = pdfData.id;
@@ -126,7 +129,7 @@ export async function renderPDFContent(pdfData, container) {
         return renderPDFContentAsText(pdfData, container);
       }
 
-      const pdfUrl = `/api/files/pdf/${pdfId}`;
+      pdfUrl = `/api/files/pdf/${pdfId}`;
       console.log('使用PDF.js查看器加载PDF:', pdfUrl, '文件路径:', pdfData.file_path);
 
       // 先测试PDF URL是否可访问
@@ -178,7 +181,9 @@ export async function renderPDFContent(pdfData, container) {
       console.error('错误详情:', {
         name: error.name,
         message: error.message,
-        pdfUrl,
+        pdfUrl: pdfUrl || '未定义',
+        pdfId: pdfData.id,
+        file_path: pdfData.file_path,
         hasPdfJs: typeof pdfjsLib !== 'undefined',
         workerSrc: typeof pdfjsLib !== 'undefined' ? pdfjsLib.GlobalWorkerOptions?.workerSrc : 'N/A'
       });
@@ -187,7 +192,7 @@ export async function renderPDFContent(pdfData, container) {
       container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-20">
           <i data-lucide="file-x" size="48" class="text-red-400 mb-4"></i>
-          <p class="text-sm text-red-600 mb-2">PDF查看器加载失败</p>
+          <p class="text-sm text-red-600 mb-2">渲染PDF失败</p>
           <p class="text-xs text-slate-500 mb-2">${error.message || '未知错误'}</p>
           <p class="text-xs text-slate-400 mb-4">正在尝试显示文本内容...</p>
         </div>
