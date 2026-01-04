@@ -18,7 +18,19 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
   // 检查PDF.js是否加载
   if (typeof pdfjsLib === 'undefined') {
     console.error('PDF.js未加载，请检查CDN或本地文件');
+    container.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-20">
+        <p class="text-sm text-red-600 mb-2">PDF.js未加载</p>
+        <p class="text-xs text-slate-500">请刷新页面重试</p>
+      </div>
+    `;
     return null;
+  }
+
+  // 检查Worker配置
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    console.warn('PDF.js Worker未配置，尝试配置...');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 
   const { scale = 1.0, page: initialPage = 1 } = options;
@@ -34,10 +46,16 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
 
     // 加载PDF文档
     console.log('开始加载PDF文档:', pdfUrl);
+    console.log('PDF.js Worker:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+    
     const loadingTask = pdfjsLib.getDocument({
       url: pdfUrl,
       httpHeaders: {},
-      withCredentials: false
+      withCredentials: false,
+      // 确保使用标准模式，支持图片和复杂内容
+      verbosity: 0, // 0 = errors, 1 = warnings, 5 = infos
+      disableAutoFetch: false,
+      disableStream: false
     });
 
     // 监听加载进度
@@ -638,16 +656,19 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
       name: error.name,
       message: error.message,
       stack: error.stack,
-      pdfUrl
+      pdfUrl,
+      workerSrc: pdfjsLib?.GlobalWorkerOptions?.workerSrc
     });
     
     let errorMessage = error.message || '未知错误';
-    if (error.name === 'MissingPDFException') {
-      errorMessage = 'PDF文件未找到，请检查文件是否存在';
+    if (error.name === 'MissingPDFException' || error.name === 'InvalidPDFException') {
+      errorMessage = 'PDF文件格式无效或损坏，请检查文件';
     } else if (error.message && error.message.includes('404')) {
       errorMessage = 'PDF文件未找到（404错误），请检查文件路径';
-    } else if (error.message && error.message.includes('Failed to fetch')) {
+    } else if (error.message && error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       errorMessage = '无法连接到服务器，请检查网络连接';
+    } else if (error.message && error.message.includes('Worker')) {
+      errorMessage = 'PDF.js Worker加载失败，请刷新页面重试';
     }
     
     container.innerHTML = `

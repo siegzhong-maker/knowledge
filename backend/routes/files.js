@@ -45,8 +45,10 @@ router.get('/pdf/:id', async (req, res) => {
     }
     
     // 验证文件路径安全性（防止路径遍历攻击）
+    // 获取上传目录路径（与upload.js保持一致）
+    const uploadsDir = process.env.UPLOADS_PATH || 
+                       (process.env.NODE_ENV === 'production' ? '/data/uploads' : path.resolve(__dirname, '../../backend/uploads'));
     let filePath;
-    const uploadsDir = path.resolve(__dirname, '../../backend/uploads');
     
     // 处理文件路径：可能是绝对路径或相对路径
     if (path.isAbsolute(item.file_path)) {

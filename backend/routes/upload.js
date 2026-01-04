@@ -7,9 +7,20 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../services/db');
 const { parsePDF } = require('../services/pdf');
 
+// 获取上传目录路径（支持Railway Volume持久化存储）
+// 优先级：环境变量 UPLOADS_PATH > /data/uploads (Railway Volume) > 本地开发路径
+const uploadsDir = process.env.UPLOADS_PATH || 
+                   (process.env.NODE_ENV === 'production' ? '/data/uploads' : path.join(__dirname, '../../backend/uploads'));
+
 // 确保上传目录存在
-const uploadsDir = path.join(__dirname, '../../backend/uploads');
-fs.mkdir(uploadsDir, { recursive: true }).catch(console.error);
+(async () => {
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    console.log(`✓ 上传目录已准备: ${uploadsDir}`);
+  } catch (error) {
+    console.error('创建上传目录失败:', error);
+  }
+})();
 
 // 配置multer
 const storage = multer.diskStorage({

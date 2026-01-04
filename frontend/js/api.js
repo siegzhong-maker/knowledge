@@ -57,6 +57,20 @@ async function apiRequest(endpoint, options = {}) {
     if (error.message.includes('fetch failed') || error.message.includes('Failed to fetch')) {
       throw new Error('无法连接到服务器，请检查网络连接或服务器是否运行');
     }
+    // 如果是HTTP错误，提供更详细的错误信息
+    if (error.message.includes('HTTP')) {
+      const statusMatch = error.message.match(/HTTP (\d+)/);
+      if (statusMatch) {
+        const status = statusMatch[1];
+        if (status === '404') {
+          throw new Error('请求的资源不存在');
+        } else if (status === '500') {
+          throw new Error('服务器内部错误，请稍后重试');
+        } else if (status === '403') {
+          throw new Error('没有权限访问该资源');
+        }
+      }
+    }
     throw error;
   }
 }

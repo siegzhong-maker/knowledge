@@ -23,9 +23,12 @@
   <!-- PDF.js for PDF rendering -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
-    // 配置PDF.js Worker
+    // 配置PDF.js Worker（必须在PDF.js加载后立即配置）
     if (typeof pdfjsLib !== 'undefined') {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      console.log('✓ PDF.js Worker已配置:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+    } else {
+      console.error('PDF.js未加载');
     }
   </script>
   <style>

@@ -175,27 +175,35 @@ export async function renderPDFContent(pdfData, container) {
     } catch (error) {
       console.error('PDF.js查看器加载失败:', error);
       console.error('错误堆栈:', error.stack);
-      // 显示错误信息
+      console.error('错误详情:', {
+        name: error.name,
+        message: error.message,
+        pdfUrl,
+        hasPdfJs: typeof pdfjsLib !== 'undefined',
+        workerSrc: typeof pdfjsLib !== 'undefined' ? pdfjsLib.GlobalWorkerOptions?.workerSrc : 'N/A'
+      });
+      
+      // 不要立即降级到文本显示，先显示错误，让用户知道是PDF查看器的问题
       container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-20">
           <i data-lucide="file-x" size="48" class="text-red-400 mb-4"></i>
-          <p class="text-sm text-red-600 mb-2">PDF加载失败</p>
-          <p class="text-xs text-slate-500 mb-4">${error.message || '未知错误'}</p>
-          <button 
-            onclick="location.reload()" 
-            class="px-4 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
-          >
-            刷新页面
-          </button>
+          <p class="text-sm text-red-600 mb-2">PDF查看器加载失败</p>
+          <p class="text-xs text-slate-500 mb-2">${error.message || '未知错误'}</p>
+          <p class="text-xs text-slate-400 mb-4">正在尝试显示文本内容...</p>
         </div>
       `;
       container.classList.remove('opacity-0');
       if (window.lucide) {
         lucide.createIcons(container);
       }
-      // 降级到文本显示
-      console.log('尝试降级到文本显示...');
-      return renderPDFContentAsText(pdfData, container);
+      
+      // 延迟降级到文本显示，让用户看到错误信息
+      setTimeout(() => {
+        console.log('降级到文本显示...');
+        renderPDFContentAsText(pdfData, container);
+      }, 2000);
+      
+      return;
     }
   }
 

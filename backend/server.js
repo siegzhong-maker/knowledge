@@ -199,6 +199,17 @@ async function ensureDatabaseInitialized() {
 // 启动服务器
 async function startServer() {
   try {
+    // 检查上传目录
+    const uploadsDir = process.env.UPLOADS_PATH || 
+                       (process.env.NODE_ENV === 'production' ? '/data/uploads' : path.join(__dirname, 'uploads'));
+    try {
+      const fs = require('fs').promises;
+      await fs.mkdir(uploadsDir, { recursive: true });
+      console.log(`✓ 上传目录已准备: ${uploadsDir}`);
+    } catch (error) {
+      console.warn('上传目录检查失败（可能不影响功能）:', error.message);
+    }
+
     // 连接数据库
     await db.connect();
     console.log('✓ 数据库连接成功');

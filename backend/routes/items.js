@@ -55,6 +55,12 @@ router.get('/', async (req, res) => {
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
+    // 获取总数（在应用ORDER BY和LIMIT之前）
+    // 构建COUNT查询：移除SELECT字段列表，替换为COUNT(*)
+    const countSql = sql.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as count FROM');
+    const countResult = await db.get(countSql, params);
+    const total = countResult?.count || 0;
+
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
 
@@ -63,7 +69,7 @@ router.get('/', async (req, res) => {
     
     const items = await db.all(sql, params);
     
-    console.log(`[Items API] 查询到 ${items.length} 条记录`);
+    console.log(`[Items API] 查询到 ${items.length} 条记录，总数: ${total}`);
 
     // 解析tags JSON（不再解析page_content，因为列表查询不返回该字段）
     const itemsWithParsedTags = items.map(item => {
@@ -78,7 +84,10 @@ router.get('/', async (req, res) => {
     res.json({
       success: true,
       data: itemsWithParsedTags,
-      total: items.length
+      total: parseInt(total),
+      page: parseInt(page),
+      limit: parseInt(limit),
+      hasMore: (parseInt(page) * parseInt(limit)) < parseInt(total)
     });
   } catch (error) {
     console.error('获取知识项失败:', error);

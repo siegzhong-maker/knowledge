@@ -666,10 +666,11 @@ function renderArchiveList() {
   });
 }
 
-// 加载归档内容
+// 加载归档内容（使用分页）
 async function loadArchivedItems() {
   try {
-    const res = await itemsAPI.getAll({ status: 'archived', page: 1, limit: 200 });
+    // 使用合理的分页大小
+    const res = await itemsAPI.getAll({ status: 'archived', page: 1, limit: 100 });
     archivedItems = res.data || [];
     renderArchiveList();
   } catch (error) {
@@ -999,6 +1000,7 @@ async function openDetail(item) {
   // 注意：对于PDF类型，即使没有raw_content也不从API获取，因为PDF内容很大
   if (!item.raw_content && item.type !== 'pdf' && item.type !== 'link') {
     try {
+      showToast('正在加载详情...', 'loading');
       const res = await itemsAPI.getById(item.id);
       if (res.success && res.data) {
         item = res.data;
@@ -1010,6 +1012,7 @@ async function openDetail(item) {
       }
     } catch (error) {
       console.error('加载详情失败:', error);
+      showToast('加载详情失败: ' + (error.message || '未知错误'), 'error');
       // 如果加载失败，仍然显示基本信息，只是没有raw_content
     }
   }
@@ -1681,21 +1684,39 @@ async function handleQuickInputKeydown(e) {
 }
 
 // 加载 items（默认排除archived）
+// 使用分页加载以提高性能
 async function loadItems() {
   try {
-    // 不传status参数，后端默认排除archived
-    // 不传knowledge_base_id，显示所有知识库的内容
-    // 增加limit以确保加载所有项目
-    const res = await itemsAPI.getAll({ type: 'all', page: 1, limit: 1000 });
+    // 显示加载状态
+    if (elDashboardSubtitle) {
+      elDashboardSubtitle.textContent = '正在加载...';
+    }
+    
+    // 使用合理的分页大小（50条记录）
+    const pageSize = 50;
+    const res = await itemsAPI.getAll({ type: 'all', page: 1, limit: pageSize });
+    
     allItems = res.data || [];
-    console.log(`加载了 ${allItems.length} 个项目`);
+    const total = res.total || allItems.length;
+    const hasMore = res.hasMore || false;
+    
+    console.log(`加载了 ${allItems.length} 个项目，总计 ${total} 个${hasMore ? '（还有更多）' : ''}`);
+    
+    // 如果有更多数据，可以考虑实现"加载更多"功能
+    // 目前先加载第一页，如果需要可以后续添加
+    if (hasMore && total > pageSize) {
+      console.log(`提示：还有 ${total - pageSize} 个项目未加载，考虑实现分页或搜索功能`);
+    }
+    
     renderCards();
     renderRepoList();
     renderTagsCloud();
     await loadDashboardStats();
   } catch (error) {
     console.error('加载内容失败:', error);
-    elDashboardSubtitle.textContent = '加载失败，请稍后重试';
+    if (elDashboardSubtitle) {
+      elDashboardSubtitle.textContent = '加载失败，请稍后重试';
+    }
     showToast(error.message || '加载内容失败', 'error');
   }
 }
