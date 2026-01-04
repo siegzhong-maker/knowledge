@@ -9,6 +9,8 @@
     "init-db": "node backend/scripts/init-db.js",
     "migrate-pdf": "node backend/scripts/migrate-pdf-support.js",
     "migrate-kb": "node backend/scripts/migrate-to-multi-knowledge-bases.js",
+    "migrate-to-pg": "node backend/scripts/migrate-sqlite-to-pg.js",
+    "migrate-via-api": "node backend/scripts/migrate-via-api.js",
     "postinstall": "npm run init-db || true"
   },
   "keywords": [

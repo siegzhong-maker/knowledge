@@ -1,480 +1,149 @@
 # 部署指南
 
-本指南提供多种部署方案，你可以根据需求选择合适的平台。
+本指南提供从零开始的部署步骤，使用 Railway 平台和 Railway Postgres 数据库。
 
-## 快速选择
+## Railway 部署（推荐）
 
-- **Render（推荐免费方案）**：完全免费，无需信用卡，适合小团队（3-5人）
-- **Railway**：$5/月免费额度，稳定可靠，需要绑定信用卡
-- **本地部署**：完全免费，数据本地存储，需要技术基础
+### 前置条件
 
----
+1. Railway 账号（[railway.app](https://railway.app)）
+2. GitHub 账号
+3. 代码已推送到 GitHub 仓库
 
-## Render 部署步骤（推荐免费方案）
+### 步骤 1：创建 Railway 项目
 
-### 前置条件：设置 Supabase 数据库
+1. 登录 [Railway](https://railway.app)
+2. 点击 "New Project"
+3. 选择 "Deploy from GitHub repo"
+4. 选择你的仓库：`siegzhong-maker/knowledge`
+5. 选择分支：`main`
 
-⚠️ **重要**：Render 免费套餐不支持持久化磁盘，需要使用外部数据库服务。
+### 步骤 2：添加 PostgreSQL 数据库
 
-1. **设置 Supabase 数据库**（免费，无需信用卡）
-   - 详细步骤请参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)
-   - 获取数据库连接字符串（DATABASE_URL）
-   - 格式：`postgresql://user:password@host:port/database`
+1. 在项目页面，点击 "+ New"
+2. 选择 "Database" > "Add PostgreSQL"
+3. Railway 会自动创建 Postgres 服务
+4. 数据库会自动配置，无需手动设置连接字符串
 
-### 1. 准备工作
+### 步骤 3：配置应用服务
 
-1. 在 [Render](https://render.com) 注册账号（免费）
-2. 将代码推送到 GitHub 仓库（如果没有的话）
-3. 完成 Supabase 数据库设置并获取 DATABASE_URL
+Railway 会自动检测到你的代码并创建 Web 服务。确认以下配置：
 
-### 2. 部署到 Render
+1. **服务名称**：knowledge（或自定义）
+2. **构建配置**：
+   - Railway 会自动使用 `Dockerfile`（项目已包含）
+   - 使用 Node.js 20
+3. **环境变量**：
+   - Railway 会自动从 Postgres 服务注入 `DATABASE_URL`
+   - 无需手动配置数据库连接
+4. **启动命令**：`npm start`（已在 railway.json 中配置）
 
-#### 方式一：通过 render.yaml 配置（推荐）
+### 步骤 4：部署和验证
 
-1. 确保项目中已有 `render.yaml` 配置文件
-2. 在 Render 控制台：
-   - 点击 "New +" > "Blueprint"
-   - 连接到你的 GitHub 仓库：`siegzhong-maker/knowledge`
-   - 选择包含 `render.yaml` 的分支（通常是 `main`）
-   - Render 会自动读取配置文件并创建服务
+1. **自动部署**：
+   - Railway 会自动从 GitHub 拉取代码
+   - 运行构建和部署
+   - 数据库表结构会自动初始化（通过 `postinstall` 脚本）
 
-3. **配置 DATABASE_URL 环境变量**（重要）：
-   - 在服务设置中找到 "Environment" 标签
-   - 点击 "Add Environment Variable"
-   - 添加：
-     - **Key**: `DATABASE_URL`
-     - **Value**: 从 Supabase 获取的连接字符串（参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)）
+2. **查看部署日志**：
+   - 在服务页面，点击 "Deployments"
+   - 查看部署日志，确认：
+     - ✓ 构建成功
+     - ✓ 数据库连接成功
+     - ✓ 应用启动成功
 
-4. 部署完成后，Render 会提供一个公网 URL，如：`https://knowledge-manager.onrender.com`
+3. **获取应用 URL**：
+   - 在服务页面，点击 "Settings"
+   - 在 "Domains" 部分，Railway 会提供默认域名
+   - 格式：`your-app.up.railway.app`
 
-#### 方式二：通过控制台手动配置
+4. **验证部署**：
+   - 访问应用 URL
+   - 访问 `/api/health` 端点，应该返回：`{"success":true,"message":"服务运行正常"}`
 
-1. 在 Render 控制台：
-   - 点击 "New +" > "Web Service"
-   - 连接到你的 GitHub 仓库
-   - Render 会自动检测 Node.js 项目
+### 步骤 5：配置自定义域名（可选）
 
-2. 配置服务：
-   - **Name**: knowledge-manager（或自定义名称）
-   - **Region**: oregon（选择离你最近的区域）
-   - **Branch**: main（或你的主分支）
-   - **Root Directory**: 留空（根目录）
-   - **Runtime**: Node
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Plan**: Free（免费套餐）
+1. 在服务页面，点击 "Settings" > "Domains"
+2. 点击 "Custom Domain"
+3. 按照提示配置 DNS 记录
 
-3. 配置环境变量：
-   - `NODE_ENV`: `production`
-   - `DATABASE_URL`: **必须配置** - 从 Supabase 获取的 PostgreSQL 连接字符串（参考 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)）
-   - `CORS_ORIGIN`: 如果需要限制CORS来源，设置此变量（可选）
+## 环境变量配置
 
-4. 点击 "Create Web Service" 完成创建
+### 自动注入的变量
 
-5. **初始化数据库**：
-   - 部署完成后，数据库会自动初始化
-   - 如果需要手动初始化，在 "Shell" 标签中运行：`npm run init-db`
+Railway 会自动从 Postgres 服务注入：
+- `DATABASE_URL` - PostgreSQL 连接字符串
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` - PostgreSQL 连接参数
 
-### 3. 初始化数据库
+### 可选环境变量
 
-部署后，数据库会自动初始化（通过 `postinstall` 脚本）。
+如果需要，可以在服务的 Variables 页面添加：
 
-如果需要手动初始化：
+- `NODE_ENV` = `production`
+- `CORS_ORIGIN` = `*` 或具体域名（如果需要限制 CORS）
+- `PORT` - 应用端口（Railway 会自动设置，通常不需要）
 
-1. 在 Render 控制台的服务页面
-2. 打开 "Shell" 标签
-3. 运行：`npm run init-db`
-4. 检查输出，确认所有表创建成功
+## 数据迁移（可选）
 
-### 4. 访问应用
+如果你有本地 SQLite 数据需要迁移：
 
-- Web前端：访问 Render 提供的 URL（如 `https://knowledge-manager.onrender.com`）
-- API端点：`https://knowledge-manager.onrender.com/api`
-- 健康检查：`https://knowledge-manager.onrender.com/api/health`
-
-### Render 免费套餐限制说明
-
-**重要提示**：
-- ✅ **完全免费**，无需信用卡
-- ⏰ **休眠机制**：应用在 15 分钟无活动后会自动休眠
-- 🚀 **唤醒时间**：首次访问休眠的应用需要等待 30-60 秒
-- 💾 **数据库持久化**：使用 Supabase 免费 PostgreSQL 数据库，数据永久保存（500MB 免费存储）
-- 📁 **文件上传限制**：上传的文件在应用重启后会丢失（可使用 Supabase Storage 或其他对象存储服务）
-- 📊 **资源限制**：免费套餐有资源使用限制，但对于 3-5 人的小团队足够使用
-- 💡 **适用场景**：适合个人项目、小团队使用，数据完全持久化
-
-**数据库方案**：
-- 使用 Supabase 免费 PostgreSQL 数据库（推荐）
-- 或升级到 Render 付费套餐使用持久化磁盘
-
-**避免休眠的技巧**：
-- 使用定时服务（如 UptimeRobot）定期访问你的应用，保持活跃
-- 或者在应用内部实现一个简单的健康检查轮询
-
-### Render 故障排查
-
-#### 应用无法启动
-- 检查构建日志，确认 `npm install` 成功
-- 检查启动命令是否正确（`npm start`）
-- 检查环境变量配置是否正确
-
-#### 数据库连接失败
-- 确认持久化磁盘已正确挂载
-- 检查 `DATABASE_PATH` 环境变量是否与挂载路径匹配
-- 确认数据库目录权限正确
-
-#### 应用休眠
-- 这是正常现象，首次访问需要等待 30-60 秒
-- 使用定时服务定期访问可以避免休眠
-
-#### 文件上传失败
-- ⚠️ **注意**：Render免费套餐下，`backend/uploads/` 目录不在持久化磁盘内
-- 上传的文件在应用重启后会丢失（这是免费套餐的限制）
-- 检查磁盘空间是否足够
-- 如需持久化上传文件，建议使用外部存储服务（如 AWS S3）或升级到付费套餐
-
----
-
-## Railway 部署步骤
-
-### 1. 准备工作
-
-1. 在 [Railway](https://railway.app) 注册账号
-2. 安装 Railway CLI（可选）：
-   ```bash
-   npm i -g @railway/cli
-   ```
-
-### 2. 部署到 Railway
-
-#### 方式一：通过 GitHub 部署（推荐）
-
-1. 将代码推送到 GitHub 仓库
-2. 在 Railway 控制台：
-   - 点击 "New Project"
-   - 选择 "Deploy from GitHub repo"
-   - 选择你的仓库
-   - Railway 会自动检测 Node.js 项目
-
-3. 配置环境变量（可选）：
-   - `PORT`: Railway 会自动设置，无需配置
-   - `DATABASE_PATH`: 数据库路径（默认使用 `/data/knowledge.db`）
-   - `CORS_ORIGIN`: 如果需要限制CORS来源，设置此变量
-
-4. 添加持久化存储（重要）：
-   - 在 Railway 项目设置中添加 "Volume"
-   - 挂载路径：`/data`
-   - 这样数据库文件会持久化保存
-
-5. 部署完成后，Railway 会提供一个公网 URL，如：`https://your-app.railway.app`
-
-#### 方式二：通过 Railway CLI
-
-```bash
-# 登录
-railway login
-
-# 初始化项目
-railway init
-
-# 部署
-railway up
-```
-
-### 3. 初始化数据库
-
-部署后首次访问时，数据库会自动创建。如果需要手动初始化：
-
-```bash
-# 通过 Railway CLI 执行
-railway run npm run init-db
-```
-
-或者在 Railway 控制台的 "Deployments" 中执行命令。
-
-### 4. 访问应用
-
-- Web前端：访问 Railway 提供的 URL（如 `https://your-app.railway.app`）
-- API端点：`https://your-app.railway.app/api`
-
-## saynote App 集成
-
-### API 端点配置
-
-在 saynote app 中配置以下 API 端点：
-
-```
-基础URL: https://your-app.railway.app/api
-```
-
-### 创建语音笔记
-
-```javascript
-// saynote app 中的调用示例
-const API_BASE = 'https://your-app.railway.app/api';
-
-async function syncVoiceNote(text, title) {
-  try {
-    const response = await fetch(`${API_BASE}/items`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        type: 'memo',
-        title: title || `语音笔记 ${new Date().toLocaleString()}`,
-        raw_content: text,
-        source: 'saynote',
-        tags: ['语音']
-      })
-    });
-    
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error('同步失败:', error);
-    throw error;
-  }
-}
-```
-
-### 批量同步（可选）
-
-如果 saynote app 需要批量上传多条笔记：
-
-```javascript
-async function syncBatchNotes(notes) {
-  const items = notes.map(note => ({
-    type: 'memo',
-    title: note.title || `语音笔记 ${new Date(note.timestamp).toLocaleString()}`,
-    raw_content: note.text,
-    source: 'saynote',
-    tags: ['语音']
-  }));
-
-  const response = await fetch(`${API_BASE}/items/batch`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ items })
-  });
-
-  return response.json();
-}
-```
-
-### API 响应格式
-
-成功响应：
-```json
-{
-  "success": true,
-  "data": {
-    "id": "uuid",
-    "type": "memo",
-    "title": "语音笔记",
-    "raw_content": "内容...",
-    "source": "saynote",
-    "tags": ["语音"],
-    "created_at": 1234567890,
-    "status": "pending"
-  }
-}
-```
-
-错误响应：
-```json
-{
-  "success": false,
-  "message": "错误信息"
-}
-```
-
-## 本地部署步骤
-
-如果你想在本地服务器或自己的机器上部署：
-
-### 1. 系统要求
-
-- Node.js 16+ 
-- npm 或 yarn
-- 至少 1GB 可用磁盘空间
-
-### 2. 安装步骤
-
-```bash
-# 1. 克隆或下载代码
-git clone <your-repo-url>
-cd knowledge
-
-# 2. 安装依赖
-npm install
-
-# 3. 初始化数据库
-npm run init-db
-
-# 4. 配置环境变量（可选）
-export NODE_ENV=production
-export DATABASE_PATH=./database/knowledge.db
-export PORT=3000
-export CORS_ORIGIN=*  # 或设置具体域名
-```
-
-### 3. 启动服务
-
-```bash
-# 使用生产模式启动
-npm start
-```
-
-服务将在 `http://localhost:3000` 启动（或你设置的PORT）
-
-### 4. 使用进程管理器（推荐）
-
-使用 PM2 让服务在后台运行并自动重启：
-
-```bash
-# 安装 PM2
-npm install -g pm2
-
-# 启动应用
-pm2 start backend/server.js --name knowledge-manager
-
-# 查看状态
-pm2 status
-
-# 查看日志
-pm2 logs knowledge-manager
-
-# 设置开机自启
-pm2 startup
-pm2 save
-```
-
-### 5. 配置反向代理（可选）
-
-如果使用 Nginx 作为反向代理：
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-## 本地开发 vs 生产环境
-
-### 本地开发
-- 数据库：`database/knowledge.db`（项目目录下）
-- 上传文件：`backend/uploads/`（项目目录下）
-- 前端：直接打开 `frontend/index.html` 或访问 `http://localhost:3000`
-- API：`http://localhost:3000/api`
-
-### 生产环境（Render + Supabase）
-- 数据库：Supabase PostgreSQL（通过 DATABASE_URL 环境变量连接）
-- 上传文件：`backend/uploads/`（⚠️ 注意：免费套餐下，上传文件在应用重启后会丢失，建议使用 Supabase Storage 或其他对象存储服务）
-- 前端：通过 Render URL 访问
-- API：通过 Render URL + `/api` 访问
-
-### 生产环境（Railway）
-- 数据库：`/data/knowledge.db`（持久化存储）
-- 上传文件：需要额外配置持久化存储
-- 前端：通过 Railway URL 访问
-- API：通过 Railway URL + `/api` 访问
-
-## 注意事项
-
-### 通用注意事项
-
-1. **数据库备份**：
-   - Render：定期从持久化磁盘备份数据库文件
-   - Railway：定期备份 `/data/knowledge.db` 文件
-   - 本地部署：定期备份 `database/knowledge.db` 文件
-
-2. **API Key安全**：
-   - DeepSeek API Key 已加密存储，但仍需注意安全
-   - 不要在代码中硬编码 API Key
-   - 使用环境变量或安全的配置管理
-
-3. **CORS配置**：
-   - 生产环境建议设置 `CORS_ORIGIN` 环境变量为具体域名
-   - 格式：`CORS_ORIGIN=https://your-domain.com`
-
-4. **文件上传限制（Render免费套餐）**：
-   - ⚠️ **重要**：Render 免费套餐下，`backend/uploads/` 目录不在持久化磁盘内
-   - 上传的PDF文件在应用重启后会丢失
-   - 建议：使用外部存储服务（如 AWS S3、Cloudinary）或升级到付费套餐
-
-5. **日志监控**：
-   - Render：在 Render 控制台查看应用日志
-   - Railway：在 Railway 控制台查看应用日志
-   - 本地部署：使用 PM2 日志或系统日志
+1. **导出本地数据**（通过应用界面导出功能，如果有）
+2. **在部署的应用中手动输入数据**（如果数据量不大）
+3. **或使用数据库迁移脚本**（需要数据库连接工具）
 
 ## 故障排查
 
-### 通用问题
+### 部署失败
 
-#### 应用无法启动
-- 检查 Node.js 版本是否符合要求（16+）
-- 检查 `npm install` 是否成功
-- 检查启动命令是否正确（`npm start`）
-- 检查环境变量配置是否正确
-- 查看应用日志获取详细错误信息
+1. 查看部署日志，找到错误信息
+2. 常见问题：
+   - 构建失败：检查 Dockerfile 和代码
+   - 数据库连接失败：确认 Postgres 服务正在运行
+   - 应用启动失败：查看 Deploy Logs 中的错误信息
 
-#### 数据库连接失败
-- **Render**：
-  - 确认持久化磁盘已正确挂载
-  - 检查 `DATABASE_PATH` 环境变量是否与挂载路径匹配（`/opt/render/project/src/database/knowledge.db`）
-  - 确认数据库目录权限正确
-- **Railway**：
-  - 检查持久化存储（Volume）是否正确挂载
-  - 确认数据库文件路径正确（`/data/knowledge.db`）
-- **本地部署**：
-  - 确认数据库文件路径存在
-  - 检查文件权限
+### 数据库连接问题
 
-#### CORS 错误
-- 检查 `CORS_ORIGIN` 环境变量配置
-- 确认前端请求的域名与配置匹配
-- 检查浏览器控制台的详细错误信息
+1. 确认 Postgres 服务状态为 "Online"
+2. 确认应用服务中没有手动设置 `DATABASE_URL`（Railway 会自动注入）
+3. 查看应用日志，确认数据库连接信息
 
-#### API 无响应
-- 检查服务是否正常运行
-- 查看应用日志
-- 检查健康检查端点：`GET /api/health`
-- 检查防火墙和端口配置
+### 应用无法访问
 
-#### 文件上传失败
-- **Render免费套餐**：
-  - ⚠️ 注意：上传文件不会持久化，重启后会丢失
-  - 检查磁盘空间是否足够
-  - 确认上传目录权限正确
-- **Railway**：
-  - 确认上传目录在持久化存储内
-  - 检查磁盘空间是否足够
-- **本地部署**：
-  - 检查 `backend/uploads/` 目录权限
-  - 确认磁盘空间足够
+1. 确认服务状态为 "Active"
+2. 检查域名配置
+3. 查看日志确认应用是否正常启动
 
-#### PDF 解析失败
-- 检查 `pdf-parse` 包是否正确安装
-- 查看服务器日志获取详细错误
-- 确认上传的PDF文件格式正确
+## 其他部署平台
 
-#### 应用休眠（Render免费套餐）
-- 这是正常现象，应用在15分钟无活动后会自动休眠
-- 首次访问休眠的应用需要等待 30-60 秒唤醒
-- 使用定时服务（如 UptimeRobot、cron-job.org）定期访问应用可以避免休眠
+### Render
 
+Render 是另一个流行的部署平台，支持免费套餐：
 
+1. 注册 [Render](https://render.com)
+2. 创建 Web Service，连接 GitHub 仓库
+3. 需要外部数据库（如 Supabase），因为 Render 免费套餐不支持持久化磁盘
+4. 配置 `DATABASE_URL` 环境变量
+
+### 本地部署
+
+1. 安装 Node.js 20+
+2. 运行 `npm install`
+3. 配置数据库（SQLite 或 PostgreSQL）
+4. 运行 `npm run init-db` 初始化数据库
+5. 运行 `npm start` 启动应用
+
+## 相关文件
+
+- `railway.json` - Railway 配置文件
+- `Dockerfile` - Docker 构建文件
+- `package.json` - 项目依赖和脚本
+- `README.md` - 项目说明
+
+## 下一步
+
+部署成功后：
+
+1. 访问应用 URL
+2. 配置 AI API Key（在应用设置中）
+3. 开始使用知识管理系统
 
