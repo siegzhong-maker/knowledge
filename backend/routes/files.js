@@ -50,13 +50,19 @@ router.get('/pdf/:id', async (req, res) => {
                        (process.env.NODE_ENV === 'production' ? '/data/uploads' : path.resolve(__dirname, '../../backend/uploads'));
     let filePath;
     
-    // 处理文件路径：可能是绝对路径或相对路径
+    console.log('PDF文件请求 - 数据库中的file_path:', item.file_path);
+    console.log('PDF文件请求 - uploadsDir:', uploadsDir);
+    
+    // 处理文件路径：优先作为相对路径处理（新上传的文件使用相对路径）
+    // 兼容旧数据：如果file_path是绝对路径，也支持
     if (path.isAbsolute(item.file_path)) {
-      // 如果是绝对路径，直接使用
+      // 如果是绝对路径（旧数据兼容），直接使用
       filePath = item.file_path;
+      console.log('PDF文件请求 - 使用绝对路径（旧数据）:', filePath);
     } else {
-      // 如果是相对路径，相对于uploads目录
+      // 如果是相对路径（新数据），相对于uploads目录
       filePath = path.join(uploadsDir, item.file_path);
+      console.log('PDF文件请求 - 使用相对路径:', filePath);
     }
     
     // 规范化路径（解析..和.）
@@ -122,7 +128,17 @@ router.get('/pdf/:id', async (req, res) => {
     } else {
       // 完整文件传输
       res.setHeader('Content-Length', fileSize);
-      res.sendFile(resolvedFilePath);
+      res.sendFile(resolvedFilePath, (err) => {
+        if (err) {
+          console.error('发送PDF文件失败:', err);
+          if (!res.headersSent) {
+            res.status(500).json({ 
+              success: false, 
+              message: '发送PDF文件失败' 
+            });
+          }
+        }
+      });
     }
   } catch (error) {
     console.error('获取PDF文件失败:', error);

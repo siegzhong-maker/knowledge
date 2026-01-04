@@ -56,8 +56,15 @@ router.post('/pdf', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: '未上传文件' });
     }
 
-    const filePath = req.file.path;
+    const absoluteFilePath = req.file.path;
+    // 存储相对路径（相对于uploads目录），这样重新部署后路径仍然有效
+    const relativeFilePath = path.relative(uploadsDir, absoluteFilePath);
+    const filePath = relativeFilePath; // 使用相对路径存储到数据库
     let fileName = req.file.originalname || '未命名文件';
+    
+    console.log('PDF上传 - 绝对路径:', absoluteFilePath);
+    console.log('PDF上传 - 相对路径:', relativeFilePath);
+    console.log('PDF上传 - 存储路径:', filePath);
 
     // 处理文件名编码（确保中文正确）
     // multer可能会将文件名编码为latin1，需要转换为utf-8
@@ -78,8 +85,8 @@ router.post('/pdf', upload.single('file'), async (req, res) => {
     
     const title = fileName.replace(/\.pdf$/i, '').trim() || '未命名文档';
 
-    // 解析PDF
-    const pdfData = await parsePDF(await fs.readFile(filePath));
+    // 解析PDF（使用绝对路径读取文件）
+    const pdfData = await parsePDF(await fs.readFile(absoluteFilePath));
     
     // 获取模块ID和知识库ID（从请求体）
     const moduleId = req.body.moduleId || null;

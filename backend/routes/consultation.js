@@ -249,9 +249,11 @@ router.post('/chat', async (req, res) => {
             res.write(`data: ${JSON.stringify({ content: '', citations: citations })}\n\n`);
           }
           
-          // 如果启用评估，执行评估
+          // 如果启用评估，执行评估（在发送[DONE]之前）
           if (shouldEvaluate && fullContent && pdfContent) {
             try {
+              console.log('开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
+              
               // 获取分页内容用于引用验证
               let pageContent = null;
               if (docId) {
@@ -261,21 +263,17 @@ router.post('/chat', async (req, res) => {
                 }
               }
               
-              // 异步执行评估，不阻塞响应
-              evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion)
-                .then(evaluationResult => {
-                  // 评估完成后，通过新的SSE事件发送结果
-                  // 注意：此时响应可能已经关闭，需要处理错误
-                  try {
-                    res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
-                  } catch (e) {
-                    console.warn('发送评估结果失败（响应已关闭）:', e);
-                  }
-                })
-                .catch(evalError => {
-                  console.error('评估过程出错:', evalError);
-                  // 评估失败不影响主流程
-                });
+              // 等待评估完成后再发送[DONE]
+              try {
+                const evaluationResult = await evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion);
+                console.log('评估完成，分数:', evaluationResult.overallScore);
+                
+                // 在响应关闭前发送评估结果
+                res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
+              } catch (evalError) {
+                console.error('评估过程出错:', evalError);
+                // 评估失败不影响主流程，继续发送[DONE]
+              }
             } catch (evalError) {
               console.error('启动评估失败:', evalError);
             }
@@ -331,9 +329,11 @@ router.post('/chat', async (req, res) => {
                     res.write(`data: ${JSON.stringify({ content: '', citations: citations })}\n\n`);
                   }
                   
-                  // 如果启用评估，执行评估
+                  // 如果启用评估，执行评估（在发送[DONE]之前）
                   if (shouldEvaluate && fullContent && pdfContent) {
                     try {
+                      console.log('开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
+                      
                       // 获取分页内容用于引用验证
                       let pageContent = null;
                       if (docId) {
@@ -343,19 +343,17 @@ router.post('/chat', async (req, res) => {
                         }
                       }
                       
-                      // 异步执行评估，不阻塞响应
-                      evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion)
-                        .then(evaluationResult => {
-                          // 评估完成后，通过新的SSE事件发送结果
-                          try {
-                            res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
-                          } catch (e) {
-                            console.warn('发送评估结果失败（响应已关闭）:', e);
-                          }
-                        })
-                        .catch(evalError => {
-                          console.error('评估过程出错:', evalError);
-                        });
+                      // 等待评估完成后再发送[DONE]
+                      try {
+                        const evaluationResult = await evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion);
+                        console.log('评估完成，分数:', evaluationResult.overallScore);
+                        
+                        // 在响应关闭前发送评估结果
+                        res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
+                      } catch (evalError) {
+                        console.error('评估过程出错:', evalError);
+                        // 评估失败不影响主流程，继续发送[DONE]
+                      }
                     } catch (evalError) {
                       console.error('启动评估失败:', evalError);
                     }
