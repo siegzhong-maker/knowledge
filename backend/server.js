@@ -16,8 +16,9 @@ const corsOptions = {
 
 // 中间件
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 增加 JSON body 大小限制（用于数据迁移）
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 静态文件服务（前端）
 app.use(express.static(path.join(__dirname, '../frontend')));
