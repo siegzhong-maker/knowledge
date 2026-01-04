@@ -8,9 +8,15 @@ code: 'ENETUNREACH'
 ```
 
 **问题分析：**
-- 应用尝试连接到 IPv6 地址 `2406:dala:6b0:f612:b352:8ee:3c1d:c05d`
-- 这不是 Supabase 的地址
-- 很可能是 Railway 自动创建了 PostgreSQL 服务，覆盖了手动设置的 `DATABASE_URL`
+- ✅ `DATABASE_URL` 环境变量正确设置
+- ✅ 应用代码正确读取到 Supabase 地址：`db.eibgzxvspsdlkrwwiqjx.supabase.co`
+- ❌ `pg` 库的 DNS 解析将域名解析到了错误的 IPv6 地址 `2406:dala:6b0:f612:b352:8ee:3c1d:c05d`
+- 这是 Railway 环境中的 DNS 解析问题，不是环境变量配置问题
+
+**已实施的修复：**
+- 在 `backend/services/db-pg.js` 中添加了 `dns.setDefaultResultOrder('ipv4first')` 配置
+- 强制 Node.js 使用 IPv4 优先的 DNS 解析
+- 添加了 DNS 解析结果的调试日志
 
 ## 解决方案
 
@@ -111,28 +117,34 @@ Railway 中环境变量的优先级：
 - 不要在项目级别设置（除非所有服务共享）
 - 不要使用 Railway 自动创建的数据库服务（如果要使用 Supabase）
 
-## 诊断步骤（已添加调试日志）
+## 诊断步骤（已添加调试日志和 DNS 修复）
 
-代码中已添加调试日志，部署后可以在日志中查看实际使用的数据库连接信息。
+代码中已添加调试日志和 DNS IPv4 强制配置，部署后可以在日志中查看实际使用的数据库连接信息。
 
 ### 查看调试日志
 
 1. 在 Railway 服务页面，点击 "Logs" 标签
 2. 查找包含 `[Database]` 的日志行
 3. 检查输出的连接信息，确认：
+   - DNS 配置是否生效：应该看到 `[Database] DNS 配置: 强制使用 IPv4 优先解析`
    - 主机名是否为 `db.eibgzxvspsdlkrwwiqjx.supabase.co`
-   - 如果显示其他主机名（如 IPv6 地址），说明环境变量未正确生效
+   - DNS 解析结果：应该看到 `[Database] DNS 解析结果: db.eibgzxvspsdlkrwwiqjx.supabase.co -> <IPv4地址>`
+   - 如果解析到 IPv6 地址，会显示警告
 
-**预期日志输出（正确）：**
+**预期日志输出（修复后，正确）：**
 ```
+[Database] DNS 配置: 强制使用 IPv4 优先解析
 [Database] 连接信息: postgresql://postgres@db.eibgzxvspsdlkrwwiqjx.supabase.co:5432/postgres
+[Database] DNS 解析结果: db.eibgzxvspsdlkrwwiqjx.supabase.co -> <IPv4地址>
 ✓ 已连接到PostgreSQL数据库
 ```
 
-**错误日志输出示例：**
+**如果仍然失败（DNS 修复未生效）：**
 ```
-[Database] 连接信息: postgresql://postgres@2406:dala:6b0:f612:b352:8ee:3c1d:c05d:5432/postgres
-[Database] 警告: 数据库主机 "2406:dala:6b0:f612:b352:8ee:3c1d:c05d" 不是预期的 Supabase 地址
+[Database] DNS 配置: 强制使用 IPv4 优先解析
+[Database] 连接信息: postgresql://postgres@db.eibgzxvspsdlkrwwiqjx.supabase.co:5432/postgres
+[Database] DNS 解析结果: db.eibgzxvspsdlkrwwiqjx.supabase.co -> 2406:dala:6b0:f612:b352:8ee:3c1d:c05d
+[Database] 警告: 解析到 IPv6 地址 2406:dala:6b0:f612:b352:8ee:3c1d:c05d，可能存在问题
 启动服务器失败: Error: connect ENETUNREACH ...
 ```
 
