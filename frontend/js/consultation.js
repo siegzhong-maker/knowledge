@@ -5,6 +5,91 @@ import { settingsAPI } from './api.js';
 import { getCurrentContext, formatContextLabel, getValidContext } from './context.js';
 import { renderPDFContent, highlightPage, scrollToQuote, getPDFContent, highlightTextInPDF } from './pdf.js';
 
+// 左侧边栏宽度调整功能
+let isResizingLeftSidebar = false;
+let leftSidebarStartX = 0;
+let leftSidebarStartWidth = 0;
+
+// 初始化左侧边栏宽度（从localStorage恢复）
+function initLeftSidebarWidth() {
+  const savedWidth = localStorage.getItem('leftSidebarWidth');
+  if (savedWidth) {
+    const width = parseInt(savedWidth, 10);
+    const leftSidebar = document.getElementById('left-sidebar');
+    if (leftSidebar) {
+      leftSidebar.style.width = `${width}px`;
+    }
+  }
+}
+
+  // 开始调整左侧边栏宽度
+  window.startResizeLeftSidebar = function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  isResizingLeftSidebar = true;
+  const leftSidebar = document.getElementById('left-sidebar');
+  
+  if (e.type === 'touchstart') {
+    leftSidebarStartX = e.touches[0].clientX;
+  } else {
+    leftSidebarStartX = e.clientX;
+  }
+  
+  leftSidebarStartWidth = leftSidebar ? parseInt(window.getComputedStyle(leftSidebar).width, 10) : 260;
+  
+  document.addEventListener('mousemove', handleLeftSidebarResize);
+  document.addEventListener('mouseup', stopResizeLeftSidebar);
+  document.addEventListener('touchmove', handleLeftSidebarResize);
+  document.addEventListener('touchend', stopResizeLeftSidebar);
+  
+  // 添加视觉反馈
+  document.body.classList.add('resizing');
+};
+
+// 处理左侧边栏宽度调整
+function handleLeftSidebarResize(e) {
+  if (!isResizingLeftSidebar) return;
+  
+  e.preventDefault();
+  
+  const leftSidebar = document.getElementById('left-sidebar');
+  if (!leftSidebar) return;
+  
+  let currentX;
+  if (e.type === 'touchmove') {
+    currentX = e.touches[0].clientX;
+  } else {
+    currentX = e.clientX;
+  }
+  
+  const diff = currentX - leftSidebarStartX;
+  const newWidth = Math.max(200, Math.min(500, leftSidebarStartWidth + diff));
+  
+  leftSidebar.style.width = `${newWidth}px`;
+}
+
+// 停止调整左侧边栏宽度
+function stopResizeLeftSidebar() {
+  if (!isResizingLeftSidebar) return;
+  
+  isResizingLeftSidebar = false;
+  
+  const leftSidebar = document.getElementById('left-sidebar');
+  if (leftSidebar) {
+    const width = parseInt(window.getComputedStyle(leftSidebar).width, 10);
+    localStorage.setItem('leftSidebarWidth', width.toString());
+  }
+  
+  document.removeEventListener('mousemove', handleLeftSidebarResize);
+  document.removeEventListener('mouseup', stopResizeLeftSidebar);
+  document.removeEventListener('touchmove', handleLeftSidebarResize);
+  document.removeEventListener('touchend', stopResizeLeftSidebar);
+  
+  // 恢复样式
+  document.body.classList.remove('resizing');
+}
+
 // 状态管理
 const state = {
   currentDocId: null,
@@ -70,6 +155,8 @@ export async function loadPDFList() {
 
 // 初始化：加载PDF列表并分析文档
 export async function initConsultation() {
+  // 初始化左侧边栏宽度
+  initLeftSidebarWidth();
   try {
     // 先初始化知识库系统（在函数顶部声明一次，后续复用）
     const kbModule = await import('./knowledge-bases.js');
