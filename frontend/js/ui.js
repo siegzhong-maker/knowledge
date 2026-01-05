@@ -1157,7 +1157,6 @@ async function openDetail(item) {
         <button
           id="btn-back-detail"
           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors"
-          onclick="closeDetail()"
         >
           <i class="fa-solid fa-arrow-left"></i>
           <span>返回</span>
@@ -1209,6 +1208,12 @@ async function openDetail(item) {
       </section>
     `;
     
+    // 绑定返回按钮事件
+    const btnBackDetail = document.getElementById('btn-back-detail');
+    if (btnBackDetail) {
+      btnBackDetail.addEventListener('click', closeDetail);
+    }
+    
     // 初始化PDF预览
     initPDFViewer(item.id, item.file_path);
   } else {
@@ -1218,7 +1223,6 @@ async function openDetail(item) {
         <button
           id="btn-back-detail"
           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors"
-          onclick="closeDetail()"
         >
           <i class="fa-solid fa-arrow-left"></i>
           <span>返回</span>
@@ -1287,6 +1291,12 @@ async function openDetail(item) {
         </article>
       </section>
     `;
+    
+    // 绑定返回按钮事件
+    const btnBackDetail = document.getElementById('btn-back-detail');
+    if (btnBackDetail) {
+      btnBackDetail.addEventListener('click', closeDetail);
+    }
   }
 
   // 如果是PDF，初始化PDF预览器
