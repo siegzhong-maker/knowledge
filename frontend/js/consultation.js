@@ -721,7 +721,8 @@ export async function startConversation(question = null) {
   
   // 如果没有历史对话，显示欢迎消息
   if (state.history.length === 0) {
-    if (state.currentDocId && state.currentDocInfo) {
+    // 检查是否有有效的文档信息（需要同时有ID和标题）
+    if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
       // 有文档，生成欢迎消息
       try {
         const welcomeResult = await consultationAPI.getWelcomeMessage(state.currentDocId);
@@ -2961,8 +2962,8 @@ export async function deleteConversation(indexOrId) {
       if (state.history.length > 0) {
         renderHistory();
       } else {
-        // 显示欢迎消息
-        if (state.currentDocId && state.currentDocInfo) {
+        // 显示欢迎消息（检查是否有有效的文档信息）
+        if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
           addAiMessage(`您好！我是${state.currentDocInfo.role || '知识助手'}，可以基于《${state.currentDocInfo.title}》为您解答相关问题。请告诉我您的问题。`);
         } else {
           addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
@@ -3484,8 +3485,8 @@ export async function createNewConversation() {
   // 更新历史对话列表
   await renderConversationHistory();
   
-  // 显示欢迎消息
-  if (state.currentDocId && state.currentDocInfo) {
+  // 显示欢迎消息（检查是否有有效的文档信息）
+  if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
     addAiMessage(`您好！我是${state.currentDocInfo.role || '知识助手'}，可以基于《${state.currentDocInfo.title}》为您解答相关问题。请告诉我您的问题。`);
   } else {
     addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
@@ -3553,8 +3554,8 @@ export async function clearConversation() {
     container.innerHTML = '';
   }
   
-  // 显示欢迎消息
-  if (state.currentDocId && state.currentDocInfo) {
+  // 显示欢迎消息（检查是否有有效的文档信息）
+  if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
     try {
       const welcomeResult = await consultationAPI.getWelcomeMessage(state.currentDocId);
       if (welcomeResult.success && welcomeResult.data.welcomeMessage) {

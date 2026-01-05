@@ -148,31 +148,74 @@ export async function renderPDFContent(pdfData, container) {
         lucide.createIcons(container);
       }
 
-      // 先测试PDF URL是否可访问
-      try {
-        console.log('测试PDF URL可访问性:', pdfUrl);
-        const testResponse = await fetch(pdfUrl, { method: 'HEAD' });
-        console.log('PDF URL测试响应:', testResponse.status, testResponse.statusText);
-        
-        if (!testResponse.ok) {
-          if (testResponse.status === 404) {
-            throw new Error('PDF文件访问失败: 404 文件未找到');
-          } else if (testResponse.status === 403) {
-            throw new Error('PDF文件访问失败: 403 权限不足');
-          } else {
-            throw new Error(`PDF文件访问失败: ${testResponse.status} ${testResponse.statusText}`);
+      // 先测试PDF URL是否可访问（带重试机制，处理文件上传后立即加载的情况）
+      let retryCount = 0;
+      const maxRetries = 3;
+      const retryDelay = 2000; // 2秒
+      
+      while (retryCount <= maxRetries) {
+        try {
+          console.log(`测试PDF URL可访问性 (尝试 ${retryCount + 1}/${maxRetries + 1}):`, pdfUrl);
+          const testResponse = await fetch(pdfUrl, { method: 'HEAD' });
+          console.log('PDF URL测试响应:', testResponse.status, testResponse.statusText);
+          
+          if (!testResponse.ok) {
+            // 如果是404且还有重试次数，等待后重试
+            if (testResponse.status === 404 && retryCount < maxRetries) {
+              console.log(`文件未找到，等待 ${retryDelay}ms 后重试...`);
+              // 更新加载提示
+              container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-20">
+                  <div class="relative">
+                    <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600 mb-6"></div>
+                    <i data-lucide="file-text" size="24" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-indigo-600"></i>
+                  </div>
+                  <p class="text-sm font-medium text-slate-700 mb-2">正在加载PDF...</p>
+                  <p class="text-xs text-slate-400">文件处理中，请稍候 (${retryCount + 1}/${maxRetries + 1})</p>
+                </div>
+              `;
+              if (window.lucide) {
+                lucide.createIcons(container);
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+              retryCount++;
+              continue;
+            }
+            
+            // 其他错误或重试次数用完，抛出错误
+            if (testResponse.status === 404) {
+              throw new Error('PDF文件访问失败: 404 文件未找到');
+            } else if (testResponse.status === 403) {
+              throw new Error('PDF文件访问失败: 403 权限不足');
+            } else {
+              throw new Error(`PDF文件访问失败: ${testResponse.status} ${testResponse.statusText}`);
+            }
           }
+          
+          // 成功，跳出循环
+          break;
+        } catch (fetchError) {
+          // 如果是网络错误且还有重试次数，重试
+          if (retryCount < maxRetries && (fetchError.message.includes('fetch failed') || fetchError.message.includes('Failed to fetch'))) {
+            console.log(`网络错误，等待 ${retryDelay}ms 后重试...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            retryCount++;
+            continue;
+          }
+          
+          // 其他错误或重试次数用完，抛出错误
+          console.error('PDF URL访问测试失败:', fetchError);
+          // 如果是404，提供更明确的错误信息
+          if (fetchError.message.includes('404')) {
+            console.error('PDF文件未找到，可能的原因：');
+            console.error('1. 文件路径不正确');
+            console.error('2. 文件已被删除');
+            console.error('3. 后端文件服务未正确配置');
+            console.error('4. 文件可能还在处理中，请稍后刷新页面');
+          }
+          throw fetchError;
         }
-      } catch (fetchError) {
-        console.error('PDF URL访问测试失败:', fetchError);
-        // 如果是404，提供更明确的错误信息
-        if (fetchError.message.includes('404')) {
-          console.error('PDF文件未找到，可能的原因：');
-          console.error('1. 文件路径不正确');
-          console.error('2. 文件已被删除');
-          console.error('3. 后端文件服务未正确配置');
-        }
-        throw fetchError;
       }
       
       // 导入PDF查看器
