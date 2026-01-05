@@ -114,11 +114,25 @@ async function initDatabase() {
     `);
     console.log('✓ modules表已创建');
 
-    // 创建索引
+    // 创建索引（性能优化）
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_type ON source_items(type)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_status ON source_items(status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_created_at ON source_items(created_at DESC)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_knowledge_base_id ON source_items(knowledge_base_id)`);
+    // 添加更多索引以优化查询性能
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_items_title ON source_items(title)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_items_type_status ON source_items(type, status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_items_updated_at ON source_items(updated_at DESC)`);
+    // 为搜索优化：创建文本搜索索引（如果PostgreSQL支持）
+    try {
+      // 尝试创建GIN索引用于全文搜索（需要pg_trgm扩展）
+      await client.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_items_title_trgm ON source_items USING gin(title gin_trgm_ops)`);
+      console.log('✓ 全文搜索索引已创建');
+    } catch (err) {
+      // 如果扩展不可用，忽略错误（不影响基本功能）
+      console.log('⚠️  全文搜索索引创建失败（可忽略）:', err.message);
+    }
     console.log('✓ 索引已创建');
 
     console.log('\n✓ PostgreSQL数据库初始化完成');

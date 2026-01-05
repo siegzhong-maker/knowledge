@@ -461,20 +461,22 @@ function renderRepoList() {
     return;
   }
 
-  elRepoList.innerHTML = data
-    .map(
-      (item) => {
-        // 状态徽章
-        let statusBadge = '';
-        if (item.status === 'pending') {
-          statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">待处理</span>';
-        } else if (item.status === 'processed') {
-          statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-green-100 text-green-800">已处理</span>';
-        } else {
-          statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">已归档</span>';
-        }
-        
-        return `
+  // 使用DocumentFragment优化DOM操作性能
+  const fragment = document.createDocumentFragment();
+  const tempDiv = document.createElement('div');
+  
+  data.forEach((item) => {
+    // 状态徽章
+    let statusBadge = '';
+    if (item.status === 'pending') {
+      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">待处理</span>';
+    } else if (item.status === 'processed') {
+      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-green-100 text-green-800">已处理</span>';
+    } else {
+      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">已归档</span>';
+    }
+    
+    tempDiv.innerHTML = `
     <tr class="hover:bg-slate-50 transition-colors" data-id="${item.id}">
       <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onclick="window.openDetailById && window.openDetailById('${item.id}')">
         ${escapeHtml(truncate(item.title || '无标题', 28))}
@@ -523,10 +525,13 @@ function renderRepoList() {
         </div>
       </td>
     </tr>
-  `;
-      }
-    )
-    .join('');
+    `;
+    fragment.appendChild(tempDiv.firstElementChild);
+  });
+  
+  // 清空现有内容并批量插入
+  elRepoList.innerHTML = '';
+  elRepoList.appendChild(fragment);
   
   // 事件委托已在bindEvents中设置，无需重复绑定
 }
@@ -578,10 +583,12 @@ function renderArchiveList() {
     return;
   }
 
-  elArchiveList.innerHTML = data
-    .map(
-      (item) => {
-        return `
+  // 使用DocumentFragment优化DOM操作性能
+  const fragment = document.createDocumentFragment();
+  const tempDiv = document.createElement('div');
+  
+  data.forEach((item) => {
+    tempDiv.innerHTML = `
     <tr class="hover:bg-slate-50 transition-colors" data-id="${item.id}">
       <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-slate-900 cursor-pointer" onclick="window.openDetailById && window.openDetailById('${item.id}')">
         ${escapeHtml(truncate(item.title || '无标题', 28))}
@@ -627,10 +634,13 @@ function renderArchiveList() {
         </div>
       </td>
     </tr>
-  `;
-      }
-    )
-    .join('');
+    `;
+    fragment.appendChild(tempDiv.firstElementChild);
+  });
+  
+  // 清空现有内容并批量插入
+  elArchiveList.innerHTML = '';
+  elArchiveList.appendChild(fragment);
   
   // 事件委托已在bindEvents中设置，无需重复绑定
 }
@@ -2467,9 +2477,10 @@ function bindEvents() {
 
   // 搜索
   if (elRepoSearchInput) {
-    elRepoSearchInput.addEventListener('input', () => {
+    // 使用防抖优化搜索性能
+    elRepoSearchInput.addEventListener('input', debounce(() => {
       renderRepoList();
-    });
+    }, 300));
   }
   
   // 知识库排序
@@ -2506,9 +2517,10 @@ function bindEvents() {
 
   // 归档搜索
   if (elArchiveSearchInput) {
-    elArchiveSearchInput.addEventListener('input', () => {
+    // 使用防抖优化搜索性能
+    elArchiveSearchInput.addEventListener('input', debounce(() => {
       renderArchiveList();
-    });
+    }, 300));
   }
   
   // 加载更多按钮
