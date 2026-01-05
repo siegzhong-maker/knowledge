@@ -160,6 +160,14 @@ const elRepoSearchInput = $('repo-search-input');
 const elTagsContainer = $('tags-container');
 const elToastContainer = $('toast-container');
 
+// PDF预览器状态
+let pdfViewerState = {
+  pdfDoc: null,
+  currentPage: 1,
+  totalPages: 0,
+  scale: 1.0
+};
+
 // 简单 Toast
 function showToast(message, type = 'success') {
   const toast = document.createElement('div');
@@ -2625,5 +2633,150 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// 初始化PDF预览器
+async function initPDFViewer(itemId, filePath) {
+  try {
+    const canvas = document.getElementById('pdf-canvas');
+    const pageInfo = document.getElementById('pdf-page-info');
+    const zoomLevel = document.getElementById('pdf-zoom-level');
+    const prevBtn = document.getElementById('pdf-prev-page');
+    const nextBtn = document.getElementById('pdf-next-page');
+    const zoomInBtn = document.getElementById('pdf-zoom-in');
+    const zoomOutBtn = document.getElementById('pdf-zoom-out');
+    
+    if (!canvas) {
+      console.error('PDF canvas元素不存在');
+      return;
+    }
+    
+    // 检查PDF.js是否已加载
+    if (typeof pdfjsLib === 'undefined') {
+      console.error('PDF.js未加载');
+      if (pageInfo) {
+        pageInfo.textContent = 'PDF.js未加载，请刷新页面';
+      }
+      return;
+    }
+    
+    // 设置PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    // 获取PDF文件URL
+    const pdfUrl = `/api/files/pdf/${itemId}`;
+    
+    showToast('正在加载PDF...', 'loading');
+    
+    // 加载PDF文档
+    const loadingTask = pdfjsLib.getDocument({
+      url: pdfUrl,
+      withCredentials: false
+    });
+    
+    pdfViewerState.pdfDoc = await loadingTask.promise;
+    pdfViewerState.totalPages = pdfViewerState.pdfDoc.numPages;
+    pdfViewerState.currentPage = 1;
+    
+    showToast('PDF加载成功', 'success');
+    
+    // 渲染第一页
+    await renderPDFPage(pdfViewerState.currentPage);
+    
+    // 绑定事件
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        if (pdfViewerState.currentPage > 1) {
+          pdfViewerState.currentPage--;
+          renderPDFPage(pdfViewerState.currentPage);
+        }
+      });
+    }
+    
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        if (pdfViewerState.currentPage < pdfViewerState.totalPages) {
+          pdfViewerState.currentPage++;
+          renderPDFPage(pdfViewerState.currentPage);
+        }
+      });
+    }
+    
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener('click', () => {
+        pdfViewerState.scale = Math.min(pdfViewerState.scale + 0.25, 3.0);
+        renderPDFPage(pdfViewerState.currentPage);
+      });
+    }
+    
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener('click', () => {
+        pdfViewerState.scale = Math.max(pdfViewerState.scale - 0.25, 0.5);
+        renderPDFPage(pdfViewerState.currentPage);
+      });
+    }
+    
+  } catch (error) {
+    console.error('初始化PDF预览器失败:', error);
+    showToast('加载PDF失败: ' + (error.message || '未知错误'), 'error');
+    const pageInfo = document.getElementById('pdf-page-info');
+    if (pageInfo) {
+      pageInfo.textContent = '加载失败';
+    }
+  }
+}
+
+// 渲染PDF页面
+async function renderPDFPage(pageNum) {
+  try {
+    const canvas = document.getElementById('pdf-canvas');
+    const pageInfo = document.getElementById('pdf-page-info');
+    const zoomLevel = document.getElementById('pdf-zoom-level');
+    const prevBtn = document.getElementById('pdf-prev-page');
+    const nextBtn = document.getElementById('pdf-next-page');
+    
+    if (!canvas || !pdfViewerState.pdfDoc) {
+      return;
+    }
+    
+    // 获取页面
+    const page = await pdfViewerState.pdfDoc.getPage(pageNum);
+    
+    // 计算缩放后的尺寸
+    const viewport = page.getViewport({ scale: pdfViewerState.scale });
+    
+    // 设置canvas尺寸
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    // 渲染页面
+    const renderContext = {
+      canvasContext: canvas.getContext('2d'),
+      viewport: viewport
+    };
+    
+    await page.render(renderContext).promise;
+    
+    // 更新页面信息
+    if (pageInfo) {
+      pageInfo.textContent = `第 ${pageNum} / ${pdfViewerState.totalPages} 页`;
+    }
+    
+    if (zoomLevel) {
+      zoomLevel.textContent = `${Math.round(pdfViewerState.scale * 100)}%`;
+    }
+    
+    // 更新按钮状态
+    if (prevBtn) {
+      prevBtn.disabled = pageNum <= 1;
+    }
+    if (nextBtn) {
+      nextBtn.disabled = pageNum >= pdfViewerState.totalPages;
+    }
+    
+  } catch (error) {
+    console.error('渲染PDF页面失败:', error);
+    showToast('渲染PDF页面失败: ' + (error.message || '未知错误'), 'error');
+  }
+}
 
 
