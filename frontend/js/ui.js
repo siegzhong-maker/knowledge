@@ -1153,6 +1153,16 @@ async function openDetail(item) {
   // 如果是PDF类型且有file_path，显示PDF预览
   if (item.type === 'pdf' && item.file_path) {
     elDetailContent.innerHTML = `
+      <div class="mb-4">
+        <button
+          id="btn-back-detail"
+          class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors"
+          onclick="closeDetail()"
+        >
+          <i class="fa-solid fa-arrow-left"></i>
+          <span>返回</span>
+        </button>
+      </div>
       <header class="mb-6 border-b border-slate-200 pb-4">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center text-xs text-slate-500">
@@ -1204,6 +1214,16 @@ async function openDetail(item) {
   } else {
     // 非PDF类型或没有file_path，显示文本内容
     elDetailContent.innerHTML = `
+      <div class="mb-4">
+        <button
+          id="btn-back-detail"
+          class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors"
+          onclick="closeDetail()"
+        >
+          <i class="fa-solid fa-arrow-left"></i>
+          <span>返回</span>
+        </button>
+      </div>
       <header class="mb-8 border-b border-slate-100 pb-5">
         <div class="flex items-center text-xs text-slate-500 mb-3">
           <span class="inline-flex items-center mr-3 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${

@@ -1134,10 +1134,11 @@
         id="view-detail"
         class="fixed inset-0 bg-white flex hidden z-30"
       >
-        <div class="absolute top-4 left-4 z-40">
+        <!-- 返回按钮已移到内容区域内部，这里保留作为备用 -->
+        <div class="absolute top-4 left-4 z-50 pointer-events-none">
           <button
             id="btn-close-detail"
-            class="w-10 h-10 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 shadow-lg transition-all hover:scale-110"
+            class="w-10 h-10 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 shadow-lg transition-all hover:scale-110 pointer-events-auto"
           >
             <i class="fa-solid fa-arrow-left"></i>
           </button>
