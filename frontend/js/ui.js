@@ -1037,8 +1037,8 @@ async function handleDeleteTag(tag) {
 let isEditing = false;
 async function openDetail(item) {
   // 如果item没有raw_content（列表查询不返回），需要从API获取完整数据
-  // 注意：对于PDF类型，即使没有raw_content也不从API获取，因为PDF内容很大
-  if (!item.raw_content && item.type !== 'pdf' && item.type !== 'link') {
+  // 对于所有类型（包括PDF），如果没有raw_content都从API获取
+  if (!item.raw_content) {
     try {
       showToast('正在加载详情...', 'loading');
       const res = await itemsAPI.getById(item.id);
@@ -1048,6 +1048,11 @@ async function openDetail(item) {
         const index = allItems.findIndex(it => it.id === item.id);
         if (index !== -1) {
           allItems[index] = item;
+        }
+        // 也更新archivedItems中的对应项
+        const archiveIndex = archivedItems.findIndex(it => it.id === item.id);
+        if (archiveIndex !== -1) {
+          archivedItems[archiveIndex] = item;
         }
       }
     } catch (error) {
@@ -1070,8 +1075,22 @@ async function openDetail(item) {
     <header class="mb-8 border-b border-slate-100 pb-5">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center text-xs text-slate-500">
-          <span class="inline-flex items-center mr-3 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
-            TEXT
+          <span class="inline-flex items-center mr-3 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
+            item.type === 'pdf' 
+              ? 'bg-red-100 text-red-700' 
+              : item.type === 'link'
+              ? 'bg-blue-100 text-blue-700'
+              : item.type === 'memo'
+              ? 'bg-purple-100 text-purple-700'
+              : 'bg-slate-100 text-slate-700'
+          }">
+            ${item.type === 'pdf' 
+              ? '<i class="fa-solid fa-file-pdf mr-1"></i> PDF'
+              : item.type === 'link'
+              ? '<i class="fa-solid fa-link mr-1"></i> 链接'
+              : item.type === 'memo'
+              ? '<i class="fa-solid fa-sticky-note mr-1"></i> 备忘录'
+              : 'TEXT'}
           </span>
           <span>${formatTime(item.created_at)}</span>
           ${

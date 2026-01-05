@@ -3,7 +3,37 @@
 // 格式化时间
 export function formatTime(timestamp) {
   if (!timestamp) return '';
-  const date = new Date(timestamp);
+  
+  let date;
+  
+  // 处理多种时间戳格式
+  if (typeof timestamp === 'number') {
+    // 数字时间戳（BIGINT或毫秒时间戳）
+    date = new Date(timestamp);
+  } else if (typeof timestamp === 'string') {
+    // 字符串格式
+    // 尝试解析为ISO字符串
+    if (timestamp.includes('T') || timestamp.includes('-')) {
+      date = new Date(timestamp);
+    } else {
+      // 可能是数字字符串（BIGINT）
+      const numTimestamp = parseInt(timestamp, 10);
+      if (!isNaN(numTimestamp) && numTimestamp > 0) {
+        date = new Date(numTimestamp);
+      } else {
+        date = new Date(timestamp);
+      }
+    }
+  } else {
+    date = new Date(timestamp);
+  }
+  
+  // 检查日期是否有效
+  if (isNaN(date.getTime())) {
+    console.warn('无法解析时间戳:', timestamp);
+    return '未知时间';
+  }
+  
   const now = new Date();
   const diff = now - date;
   
