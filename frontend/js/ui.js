@@ -1088,6 +1088,9 @@ async function openDetail(item) {
   isEditing = false;
   elViewDetail.classList.remove('hidden');
   
+  // 防止背景滚动（当详情页显示时）
+  document.body.style.overflow = 'hidden';
+  
   // 清理PDF预览器状态（如果存在）
   // 取消正在进行的渲染任务
   if (pdfViewerState.renderTask) {
@@ -1153,7 +1156,7 @@ async function openDetail(item) {
               </button>
             </div>
           </div>
-          <div id="pdf-canvas-container" class="w-full overflow-auto bg-slate-100 rounded border border-slate-200" style="min-height: 600px; max-height: calc(100vh - 300px);">
+          <div id="pdf-canvas-container" class="w-full overflow-auto bg-slate-100 rounded border border-slate-200" style="min-height: 600px; max-height: calc(100vh - 250px);">
             <canvas id="pdf-canvas" class="mx-auto block"></canvas>
           </div>
         </div>
@@ -1332,6 +1335,9 @@ async function handleSaveEdit() {
 function closeDetail() {
   elViewDetail.classList.add('hidden');
   currentItem = null;
+  
+  // 恢复背景滚动
+  document.body.style.overflow = '';
 }
 
 // AI 聊天消息渲染
