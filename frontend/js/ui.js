@@ -1,6 +1,6 @@
 import { itemsAPI, parseAPI, aiAPI, settingsAPI, tagsAPI, exportAPI } from './api.js';
 import { storage } from './storage.js';
-import { formatTime, truncate, isURL, debounce } from './utils.js';
+import { formatTime, truncate, isURL, debounce, throttle } from './utils.js';
 
 // 配置 Marked.js
 if (typeof marked !== 'undefined') {
@@ -165,7 +165,9 @@ let pdfViewerState = {
   pdfDoc: null,
   currentPage: 1,
   totalPages: 0,
-  scale: 1.0
+  scale: 1.0,
+  renderTask: null,  // 当前的渲染任务
+  isRendering: false  // 是否正在渲染
 };
 
 // 简单 Toast
@@ -1087,11 +1089,21 @@ async function openDetail(item) {
   elViewDetail.classList.remove('hidden');
   
   // 清理PDF预览器状态（如果存在）
+  // 取消正在进行的渲染任务
+  if (pdfViewerState.renderTask) {
+    try {
+      pdfViewerState.renderTask.cancel();
+    } catch (e) {
+      // 忽略取消错误
+    }
+  }
   pdfViewerState = {
     pdfDoc: null,
     currentPage: 1,
     totalPages: 0,
-    scale: 1.0
+    scale: 1.0,
+    renderTask: null,
+    isRendering: false
   };
 
   const tagsStr =
@@ -2682,37 +2694,41 @@ async function initPDFViewer(itemId, filePath) {
     // 渲染第一页
     await renderPDFPage(pdfViewerState.currentPage);
     
-    // 绑定事件
+    // 绑定事件（使用节流防止快速连续点击）
     if (prevBtn) {
-      prevBtn.addEventListener('click', () => {
+      prevBtn.addEventListener('click', throttle(() => {
+        if (pdfViewerState.isRendering) return; // 如果正在渲染，忽略点击
         if (pdfViewerState.currentPage > 1) {
           pdfViewerState.currentPage--;
           renderPDFPage(pdfViewerState.currentPage);
         }
-      });
+      }, 300));
     }
     
     if (nextBtn) {
-      nextBtn.addEventListener('click', () => {
+      nextBtn.addEventListener('click', throttle(() => {
+        if (pdfViewerState.isRendering) return; // 如果正在渲染，忽略点击
         if (pdfViewerState.currentPage < pdfViewerState.totalPages) {
           pdfViewerState.currentPage++;
           renderPDFPage(pdfViewerState.currentPage);
         }
-      });
+      }, 300));
     }
     
     if (zoomInBtn) {
-      zoomInBtn.addEventListener('click', () => {
+      zoomInBtn.addEventListener('click', throttle(() => {
+        if (pdfViewerState.isRendering) return; // 如果正在渲染，忽略点击
         pdfViewerState.scale = Math.min(pdfViewerState.scale + 0.25, 3.0);
         renderPDFPage(pdfViewerState.currentPage);
-      });
+      }, 300));
     }
     
     if (zoomOutBtn) {
-      zoomOutBtn.addEventListener('click', () => {
+      zoomOutBtn.addEventListener('click', throttle(() => {
+        if (pdfViewerState.isRendering) return; // 如果正在渲染，忽略点击
         pdfViewerState.scale = Math.max(pdfViewerState.scale - 0.25, 0.5);
         renderPDFPage(pdfViewerState.currentPage);
-      });
+      }, 300));
     }
     
   } catch (error) {
@@ -2728,14 +2744,39 @@ async function initPDFViewer(itemId, filePath) {
 // 渲染PDF页面
 async function renderPDFPage(pageNum) {
   try {
+    // 如果正在渲染，先取消之前的渲染任务
+    if (pdfViewerState.isRendering && pdfViewerState.renderTask) {
+      try {
+        pdfViewerState.renderTask.cancel();
+      } catch (e) {
+        // 忽略取消错误
+      }
+    }
+    
     const canvas = document.getElementById('pdf-canvas');
     const pageInfo = document.getElementById('pdf-page-info');
     const zoomLevel = document.getElementById('pdf-zoom-level');
     const prevBtn = document.getElementById('pdf-prev-page');
     const nextBtn = document.getElementById('pdf-next-page');
+    const zoomInBtn = document.getElementById('pdf-zoom-in');
+    const zoomOutBtn = document.getElementById('pdf-zoom-out');
     
     if (!canvas || !pdfViewerState.pdfDoc) {
       return;
+    }
+    
+    // 设置渲染状态
+    pdfViewerState.isRendering = true;
+    
+    // 禁用所有控制按钮
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    if (zoomInBtn) zoomInBtn.disabled = true;
+    if (zoomOutBtn) zoomOutBtn.disabled = true;
+    
+    // 更新页面信息为加载状态
+    if (pageInfo) {
+      pageInfo.textContent = `加载中...`;
     }
     
     // 获取页面
@@ -2754,7 +2795,13 @@ async function renderPDFPage(pageNum) {
       viewport: viewport
     };
     
-    await page.render(renderContext).promise;
+    // 创建渲染任务并保存
+    pdfViewerState.renderTask = page.render(renderContext);
+    await pdfViewerState.renderTask.promise;
+    
+    // 清除渲染任务
+    pdfViewerState.renderTask = null;
+    pdfViewerState.isRendering = false;
     
     // 更新页面信息
     if (pageInfo) {
@@ -2772,10 +2819,41 @@ async function renderPDFPage(pageNum) {
     if (nextBtn) {
       nextBtn.disabled = pageNum >= pdfViewerState.totalPages;
     }
+    if (zoomInBtn) {
+      zoomInBtn.disabled = pdfViewerState.scale >= 3.0;
+    }
+    if (zoomOutBtn) {
+      zoomOutBtn.disabled = pdfViewerState.scale <= 0.5;
+    }
     
   } catch (error) {
+    // 清除渲染状态
+    pdfViewerState.renderTask = null;
+    pdfViewerState.isRendering = false;
+    
+    // 重新启用按钮
+    const prevBtn = document.getElementById('pdf-prev-page');
+    const nextBtn = document.getElementById('pdf-next-page');
+    const zoomInBtn = document.getElementById('pdf-zoom-in');
+    const zoomOutBtn = document.getElementById('pdf-zoom-out');
+    if (prevBtn) prevBtn.disabled = false;
+    if (nextBtn) nextBtn.disabled = false;
+    if (zoomInBtn) zoomInBtn.disabled = false;
+    if (zoomOutBtn) zoomOutBtn.disabled = false;
+    
+    // 检查是否是取消操作（不应该显示错误）
+    if (error.name === 'RenderingCancelledException' || error.message && error.message.includes('cancelled')) {
+      console.log('渲染已取消');
+      return;
+    }
+    
     console.error('渲染PDF页面失败:', error);
     showToast('渲染PDF页面失败: ' + (error.message || '未知错误'), 'error');
+    
+    const pageInfo = document.getElementById('pdf-page-info');
+    if (pageInfo) {
+      pageInfo.textContent = '渲染失败';
+    }
   }
 }
 
