@@ -1514,6 +1514,78 @@ function renderEvaluation(evaluation, messageId) {
   // 警告提示
   const showWarning = overallScore < 60;
   
+  // 格式化引用准确性显示
+  let citationDisplay = '无引用';
+  let citationStatus = '';
+  if (citationValidation.totalCount > 0) {
+    const validCount = citationValidation.validCount || 0;
+    const totalCount = citationValidation.totalCount;
+    if (validCount === totalCount) {
+      citationDisplay = `${validCount}/${totalCount}`;
+      citationStatus = '<span class="text-green-600 ml-1">✓ 全部有效</span>';
+    } else {
+      const invalidCount = totalCount - validCount;
+      citationDisplay = `${validCount}/${totalCount}`;
+      citationStatus = `<span class="text-red-600 ml-1">⚠️ ${invalidCount}个无效</span>`;
+    }
+  }
+  
+  // 生成引用详情HTML
+  let citationDetailsHtml = '';
+  if (citationValidation.details && citationValidation.details.length > 0) {
+    const citationItems = citationValidation.details.map((detail, idx) => {
+      const isValid = detail.valid;
+      const icon = isValid ? 'check-circle-2' : 'x-circle';
+      const iconColor = isValid ? 'text-green-600' : 'text-red-600';
+      const statusText = isValid ? '有效' : '无效';
+      const reason = detail.reason || (isValid ? '引用有效' : '引用无效');
+      
+      return `
+        <div class="flex items-center gap-2 py-1">
+          <i data-lucide="${icon}" size="12" class="${iconColor}"></i>
+          <span class="text-slate-600">引用 ${idx + 1} (第${detail.page}页):</span>
+          <span class="text-xs ${isValid ? 'text-green-600' : 'text-red-600'}">${statusText}</span>
+          ${!isValid ? `<span class="text-xs text-slate-500 ml-1">(${reason})</span>` : ''}
+        </div>
+      `;
+    }).join('');
+    
+    citationDetailsHtml = `
+      <div class="mt-2 pt-2 border-t border-slate-200">
+        <div class="text-slate-500 mb-1">引用详情:</div>
+        <div class="space-y-0.5">
+          ${citationItems}
+        </div>
+      </div>
+    `;
+  }
+  
+  // 改进评估说明，使其更通俗易懂
+  let explanationHtml = '';
+  if (aiEvaluation.explanation) {
+    // 将技术化的说明转换为更通俗的语言
+    let explanation = aiEvaluation.explanation;
+    
+    // 如果评分较低，添加改进建议
+    let suggestion = '';
+    if (overallScore < 60) {
+      suggestion = '<div class="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs"><strong>💡 建议：</strong>回答的相关性较低，可能需要更明确地引用知识库中的具体内容，或检查知识库是否包含相关信息。</div>';
+    } else if (overallScore < 80) {
+      suggestion = '<div class="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs"><strong>💡 提示：</strong>回答基本基于知识库，但可以更准确地引用具体内容以提高相关性。</div>';
+    }
+    
+    explanationHtml = `
+      <div class="pt-2 border-t border-slate-200">
+        <div class="flex items-start gap-2 mb-1">
+          <i data-lucide="info" size="14" class="text-slate-400 mt-0.5"></i>
+          <span class="text-slate-500 font-medium">评估说明:</span>
+        </div>
+        <p class="text-slate-600 mt-1 ml-6">${escapeHtml(explanation)}</p>
+        ${suggestion}
+      </div>
+    `;
+  }
+  
   return `
     <div class="evaluation-area mb-3" data-message-id="${messageId}">
       <div class="evaluation-header flex items-center justify-between cursor-pointer" onclick="toggleEvaluationDetails('${messageId}')">
@@ -1524,38 +1596,71 @@ function renderEvaluation(evaluation, messageId) {
             ${overallScore}分
           </span>
           ${showWarning ? '<span class="text-xs text-red-600">⚠️ 相关性较低</span>' : ''}
+          <button 
+            class="evaluation-help-btn ml-1 text-slate-400 hover:text-slate-600 transition-colors" 
+            onclick="event.stopPropagation(); showEvaluationHelp('${messageId}')"
+            title="查看指标说明"
+          >
+            <i data-lucide="help-circle" size="14"></i>
+          </button>
         </div>
         <i data-lucide="chevron-down" size="14" class="text-slate-400 evaluation-chevron"></i>
       </div>
       <div class="evaluation-details hidden mt-2 p-3 bg-slate-50 rounded-lg text-xs space-y-2" id="evaluation-details-${messageId}">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <span class="text-slate-500">文本相似度:</span>
-            <span class="font-medium text-slate-700 ml-1">${Math.round(textSimilarity.similarity || 0)}%</span>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="metric-item" data-metric="textSimilarity">
+            <div class="flex items-center gap-1.5 mb-1">
+              <i data-lucide="file-text" size="12" class="text-slate-400"></i>
+              <span class="text-slate-500">文本相似度</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-slate-200 rounded-full h-1.5">
+                <div class="bg-indigo-500 h-1.5 rounded-full" style="width: ${Math.min(Math.round(textSimilarity.similarity || 0), 100)}%"></div>
+              </div>
+              <span class="font-medium text-slate-700 min-w-[3rem] text-right">${Math.round(textSimilarity.similarity || 0)}%</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">用词接近程度</div>
           </div>
-          <div>
-            <span class="text-slate-500">内容匹配度:</span>
-            <span class="font-medium text-slate-700 ml-1">${Math.round(textSimilarity.contentRatio || 0)}%</span>
+          <div class="metric-item" data-metric="contentRatio">
+            <div class="flex items-center gap-1.5 mb-1">
+              <i data-lucide="search" size="12" class="text-slate-400"></i>
+              <span class="text-slate-500">内容匹配度</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-slate-200 rounded-full h-1.5">
+                <div class="bg-blue-500 h-1.5 rounded-full" style="width: ${Math.min(Math.round(textSimilarity.contentRatio || 0), 100)}%"></div>
+              </div>
+              <span class="font-medium text-slate-700 min-w-[3rem] text-right">${Math.round(textSimilarity.contentRatio || 0)}%</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">知识库中找到的内容比例</div>
           </div>
-          <div>
-            <span class="text-slate-500">引用准确性:</span>
-            <span class="font-medium text-slate-700 ml-1">
-              ${citationValidation.totalCount > 0 
-                ? `${citationValidation.validCount}/${citationValidation.totalCount}` 
-                : '无引用'}
-            </span>
+          <div class="metric-item" data-metric="citationAccuracy">
+            <div class="flex items-center gap-1.5 mb-1">
+              <i data-lucide="book-open" size="12" class="text-slate-400"></i>
+              <span class="text-slate-500">引用准确性</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-slate-700">${citationDisplay}</span>
+              ${citationStatus}
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">引用的文档页码和内容是否真实存在</div>
+            ${citationDetailsHtml}
           </div>
-          <div>
-            <span class="text-slate-500">AI评估:</span>
-            <span class="font-medium text-slate-700 ml-1">${Math.round(aiEvaluation.relevanceScore || 0)}%</span>
+          <div class="metric-item" data-metric="aiEvaluation">
+            <div class="flex items-center gap-1.5 mb-1">
+              <i data-lucide="brain" size="12" class="text-slate-400"></i>
+              <span class="text-slate-500">AI评估</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-slate-200 rounded-full h-1.5">
+                <div class="bg-purple-500 h-1.5 rounded-full" style="width: ${Math.min(Math.round(aiEvaluation.relevanceScore || 0), 100)}%"></div>
+              </div>
+              <span class="font-medium text-slate-700 min-w-[3rem] text-right">${Math.round(aiEvaluation.relevanceScore || 0)}%</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">基于知识库而非通用知识的程度</div>
           </div>
         </div>
-        ${aiEvaluation.explanation ? `
-          <div class="pt-2 border-t border-slate-200">
-            <span class="text-slate-500">评估说明:</span>
-            <p class="text-slate-600 mt-1">${escapeHtml(aiEvaluation.explanation)}</p>
-          </div>
-        ` : ''}
+        ${explanationHtml}
       </div>
     </div>
   `;
@@ -1575,6 +1680,112 @@ window.toggleEvaluationDetails = function(messageId) {
       }
       lucide.createIcons(chevronEl);
     }
+  }
+};
+
+// 显示评估帮助说明
+window.showEvaluationHelp = function(messageId) {
+  // 检查是否已存在帮助弹窗
+  let helpModal = document.getElementById('evaluation-help-modal');
+  if (helpModal) {
+    helpModal.remove();
+  }
+  
+  // 创建帮助弹窗
+  helpModal = document.createElement('div');
+  helpModal.id = 'evaluation-help-modal';
+  helpModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+  helpModal.onclick = function(e) {
+    if (e.target === helpModal) {
+      helpModal.remove();
+    }
+  };
+  
+  helpModal.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <i data-lucide="help-circle" size="20" class="text-indigo-600"></i>
+            相关性评估指标说明
+          </h3>
+          <button onclick="document.getElementById('evaluation-help-modal').remove()" class="text-slate-400 hover:text-slate-600">
+            <i data-lucide="x" size="20"></i>
+          </button>
+        </div>
+        <div class="space-y-4 text-sm">
+          <div class="p-3 bg-slate-50 rounded-lg">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="file-text" size="16" class="text-indigo-600"></i>
+              <span class="font-medium text-slate-900">文本相似度</span>
+            </div>
+            <p class="text-slate-600 text-xs leading-relaxed">
+              AI回答与知识库内容的词汇相似程度。数值越高表示AI回答使用的词汇与知识库越接近。
+              例如：如果知识库提到"创业阶段"，AI回答也使用了"创业阶段"这个词，相似度会提高。
+            </p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-lg">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="search" size="16" class="text-blue-600"></i>
+              <span class="font-medium text-slate-900">内容匹配度</span>
+            </div>
+            <p class="text-slate-600 text-xs leading-relaxed">
+              AI回答中有多少内容能在知识库中找到。反映AI回答是否真正基于知识库内容。
+              例如：如果AI回答中的关键短语和句子都能在知识库文档中找到，匹配度会较高。
+            </p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-lg">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="book-open" size="16" class="text-green-600"></i>
+              <span class="font-medium text-slate-900">引用准确性</span>
+            </div>
+            <p class="text-slate-600 text-xs leading-relaxed">
+              AI引用的文档页码和内容是否真实存在。格式为"有效数/总数"，例如"4/4"表示4个引用全部有效。
+              <br><br>
+              <strong>如何理解：</strong>
+              <ul class="list-disc list-inside mt-1 space-y-1 text-xs">
+                <li><strong>4/4 ✓ 全部有效</strong>：所有引用都指向真实存在的文档页面</li>
+                <li><strong>2/4 ⚠️ 2个无效</strong>：有2个引用指向不存在的页面或内容不匹配</li>
+                <li><strong>无引用</strong>：AI回答没有引用任何文档</li>
+              </ul>
+            </p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-lg">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="brain" size="16" class="text-purple-600"></i>
+              <span class="font-medium text-slate-900">AI评估</span>
+            </div>
+            <p class="text-slate-600 text-xs leading-relaxed">
+              AI判断回答多大程度基于知识库内容，而非AI的通用知识。这是综合评估，考虑回答的整体相关性。
+              例如：如果AI主要使用知识库中的具体案例和数据，而不是通用知识，评分会较高。
+            </p>
+          </div>
+          <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="lightbulb" size="16" class="text-yellow-600"></i>
+              <span class="font-medium text-slate-900">综合评分</span>
+            </div>
+            <p class="text-slate-600 text-xs leading-relaxed">
+              综合评分 = 文本相似度(30%) + 引用准确性(20%) + AI评估(50%)
+              <br><br>
+              <strong>评分参考：</strong>
+              <ul class="list-disc list-inside mt-1 space-y-1 text-xs">
+                <li><strong>80-100分（绿色）</strong>：回答高度基于知识库，相关性很好</li>
+                <li><strong>60-79分（黄色）</strong>：回答基本基于知识库，但可以更准确</li>
+                <li><strong>0-59分（红色）</strong>：回答相关性较低，可能主要依赖AI通用知识</li>
+              </ul>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(helpModal);
+  
+  // 初始化图标
+  if (window.lucide) {
+    lucide.createIcons(helpModal);
   }
 };
 
