@@ -1,6 +1,6 @@
 import { itemsAPI, parseAPI, aiAPI, settingsAPI, tagsAPI, exportAPI } from './api.js';
 import { storage } from './storage.js';
-import { formatTime, truncate, isURL } from './utils.js';
+import { formatTime, truncate, isURL, debounce } from './utils.js';
 
 // 配置 Marked.js
 if (typeof marked !== 'undefined') {
@@ -68,6 +68,40 @@ let currentItem = null;
 let apiConfigured = false;
 let globalSearchTerm = '';
 let stats = null;
+
+// 批量渲染优化：使用requestAnimationFrame合并多个渲染调用
+let renderScheduled = false;
+let renderQueue = {
+  cards: false,
+  repoList: false,
+  tagsCloud: false,
+  archiveList: false
+};
+
+function scheduleRender(types) {
+  if (typeof types === 'string') {
+    types = [types];
+  }
+  types.forEach(type => {
+    renderQueue[type] = true;
+  });
+  
+  if (!renderScheduled) {
+    renderScheduled = true;
+    requestAnimationFrame(() => {
+      renderScheduled = false;
+      const queue = { ...renderQueue };
+      // 重置队列
+      Object.keys(renderQueue).forEach(key => renderQueue[key] = false);
+      
+      // 批量执行渲染
+      if (queue.cards) renderCards();
+      if (queue.repoList) renderRepoList();
+      if (queue.tagsCloud) renderTagsCloud();
+      if (queue.archiveList) renderArchiveList();
+    });
+  }
+}
 
 // 元素获取
 const $ = (id) => document.getElementById(id);
@@ -173,9 +207,9 @@ function switchView(view) {
 
   if (view === 'consultation' && elViewConsultation) {
     elViewConsultation.classList.remove('hidden');
-    // 初始化Lucide图标
+    // 初始化Lucide图标（性能优化：只在咨询视图容器内初始化）
     if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
+      lucide.createIcons(elViewConsultation);
     }
     // 初始化咨询工作台
     import('./consultation.js').then(({ initConsultation, loadHistory }) => {
@@ -189,9 +223,9 @@ function switchView(view) {
           const labelText = formatContextLabel();
           labelEl.textContent = labelText || '未设置';
         }
-        // 重新初始化图标
-        if (typeof lucide !== 'undefined') {
-          lucide.createIcons();
+        // 重新初始化图标（性能优化：只在context相关元素内初始化）
+        if (typeof lucide !== 'undefined' && labelEl) {
+          lucide.createIcons(labelEl.closest('[id^="view-"], [id^="context"]') || elViewConsultation);
         }
       });
     });
@@ -248,8 +282,7 @@ function setFilter(filter) {
       btn.classList.remove('bg-white', 'text-slate-600', 'border', 'border-slate-200');
     }
   });
-  renderCards();
-  renderRepoList();
+  scheduleRender(['cards', 'repoList']);
 }
 
 // 渲染卡片
@@ -349,15 +382,8 @@ function renderCards() {
       </article>`;
     })
     .join('');
-
-  // 绑定点击事件
-  elCardGrid.querySelectorAll('article[data-id]').forEach((card) => {
-    card.addEventListener('click', async () => {
-      const id = card.getAttribute('data-id');
-      const item = allItems.find((it) => it.id === id);
-      if (item) await openDetail(item);
-    });
-  });
+  
+  // 事件委托已在bindEvents中设置，无需重复绑定
 }
 
 // 渲染知识库列表
@@ -452,78 +478,8 @@ function renderRepoList() {
       }
     )
     .join('');
-
-  // 绑定查看按钮
-  elRepoList.querySelectorAll('[data-action="view"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = allItems.find((it) => it.id === id);
-      if (item) await openDetail(item);
-    });
-  });
-
-  // 绑定归档按钮
-  elRepoList.querySelectorAll('[data-action="archive"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = allItems.find((it) => it.id === id);
-      if (!item) return;
-
-      if (!confirm(`确定要归档 "${item.title}" 吗？归档后可在归档页面恢复。`)) {
-        return;
-      }
-
-      try {
-        showToast('正在归档...', 'loading');
-        await itemsAPI.archive(id);
-        allItems = allItems.filter((it) => it.id !== id);
-        renderCards();
-        renderRepoList();
-        renderTagsCloud();
-        if (stats) {
-          stats.total = (stats.total || 0) - 1;
-          updateDashboardStats();
-        }
-        showToast('归档成功', 'success');
-      } catch (error) {
-        console.error('归档失败:', error);
-        showToast(error.message || '归档失败', 'error');
-      }
-    });
-  });
-
-  // 绑定删除按钮（软删除，实际是归档）
-  elRepoList.querySelectorAll('[data-action="delete"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = allItems.find((it) => it.id === id);
-      if (!item) return;
-
-      if (!confirm(`确定要删除 "${item.title}" 吗？删除后可在归档页面恢复。`)) {
-        return;
-      }
-
-      try {
-        showToast('正在删除...', 'loading');
-        await itemsAPI.delete(id);
-        allItems = allItems.filter((it) => it.id !== id);
-        renderCards();
-        renderRepoList();
-        renderTagsCloud();
-        if (stats) {
-          stats.total = (stats.total || 0) - 1;
-          updateDashboardStats();
-        }
-        showToast('删除成功', 'success');
-      } catch (error) {
-        console.error('删除失败:', error);
-        showToast(error.message || '删除失败', 'error');
-      }
-    });
-  });
+  
+  // 事件委托已在bindEvents中设置，无需重复绑定
 }
 
 // 渲染归档列表
@@ -599,72 +555,8 @@ function renderArchiveList() {
       }
     )
     .join('');
-
-  // 绑定查看按钮
-  elArchiveList.querySelectorAll('[data-action="view"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = archivedItems.find((it) => it.id === id);
-      if (item) await openDetail(item);
-    });
-  });
-
-  // 绑定恢复按钮
-  elArchiveList.querySelectorAll('[data-action="restore"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = archivedItems.find((it) => it.id === id);
-      if (!item) return;
-
-      try {
-        showToast('正在恢复...', 'loading');
-        await itemsAPI.restore(id);
-        archivedItems = archivedItems.filter((it) => it.id !== id);
-        await loadItems(); // 重新加载活跃内容
-        renderArchiveList();
-        if (stats) {
-          stats.total = (stats.total || 0) + 1;
-          stats.archived = (stats.archived || 0) - 1;
-          updateDashboardStats();
-        }
-        showToast('恢复成功', 'success');
-      } catch (error) {
-        console.error('恢复失败:', error);
-        showToast(error.message || '恢复失败', 'error');
-      }
-    });
-  });
-
-  // 绑定永久删除按钮
-  elArchiveList.querySelectorAll('[data-action="permanent-delete"]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-id');
-      const item = archivedItems.find((it) => it.id === id);
-      if (!item) return;
-
-      if (!confirm(`确定要永久删除 "${item.title}" 吗？此操作不可恢复！`)) {
-        return;
-      }
-
-      try {
-        showToast('正在永久删除...', 'loading');
-        await itemsAPI.permanentDelete(id);
-        archivedItems = archivedItems.filter((it) => it.id !== id);
-        renderArchiveList();
-        if (stats) {
-          stats.archived = (stats.archived || 0) - 1;
-          updateDashboardStats();
-        }
-        showToast('永久删除成功', 'success');
-      } catch (error) {
-        console.error('永久删除失败:', error);
-        showToast(error.message || '永久删除失败', 'error');
-      }
-    });
-  });
+  
+  // 事件委托已在bindEvents中设置，无需重复绑定
 }
 
 // 加载归档内容（使用分页）
@@ -731,8 +623,7 @@ window.clearFilters = () => {
   globalSearchTerm = '';
   currentTagFilter = null;
   if (elGlobalSearch) elGlobalSearch.value = '';
-  renderCards();
-  renderRepoList();
+  scheduleRender(['cards', 'repoList']);
   showToast('已清除筛选', 'info');
 };
 
@@ -900,8 +791,7 @@ function filterByTag(tag) {
   globalSearchTerm = ''; // 清除搜索
   if (elGlobalSearch) elGlobalSearch.value = '';
   switchView('dashboard');
-  renderCards();
-  renderRepoList();
+  scheduleRender(['cards', 'repoList']);
   showToast(`已筛选标签: #${tag}`, 'info');
 }
 
@@ -1204,8 +1094,7 @@ async function handleSaveEdit() {
 
     isEditing = false;
     await openDetail(currentItem); // 重新渲染
-    renderCards();
-    renderRepoList();
+    scheduleRender(['cards', 'repoList']);
 
     showToast('保存成功', 'success');
   } catch (error) {
@@ -1520,9 +1409,7 @@ function showTagSelectionModal(itemId, suggestedTags) {
         await openDetail(currentItem);
       }
       
-      renderCards();
-      renderRepoList();
-      renderTagsCloud();
+      scheduleRender(['cards', 'repoList', 'tagsCloud']);
       
       closeModal();
       showToast(`已添加 ${tagsToAdd.length} 个标签`, 'success');
@@ -1576,8 +1463,7 @@ async function handleBatchSummary() {
 
       // 每5个更新一次UI
       if ((i + 1) % 5 === 0 || i === itemsToSummarize.length - 1) {
-        renderCards();
-        renderRepoList();
+        scheduleRender(['cards', 'repoList']);
       }
     } catch (error) {
       console.error(`为 ${item.title} 生成摘要失败:`, error);
@@ -1617,8 +1503,7 @@ async function refreshItemAfterSummary(itemId) {
         await openDetail(currentItem);
       }
       
-      renderCards();
-      renderRepoList();
+      scheduleRender(['cards', 'repoList']);
     }
   } catch (error) {
     console.error('刷新数据失败:', error);
@@ -1709,9 +1594,7 @@ async function loadItems() {
       console.log(`提示：还有 ${total - pageSize} 个项目未加载，考虑实现分页或搜索功能`);
     }
     
-    renderCards();
-    renderRepoList();
-    renderTagsCloud();
+    scheduleRender(['cards', 'repoList', 'tagsCloud']);
     await loadDashboardStats();
   } catch (error) {
     console.error('加载内容失败:', error);
@@ -1853,12 +1736,135 @@ function bindEvents() {
     elQuickInput.addEventListener('keydown', handleQuickInputKeydown);
   }
 
-  // 全局搜索
+  // 全局搜索（使用防抖优化）
   if (elGlobalSearch) {
-    elGlobalSearch.addEventListener('input', (e) => {
-      globalSearchTerm = e.target.value.trim();
+    const debouncedSearch = debounce((value) => {
+      globalSearchTerm = value.trim();
       renderCards();
       renderRepoList();
+    }, 300);
+    elGlobalSearch.addEventListener('input', (e) => {
+      debouncedSearch(e.target.value);
+    });
+  }
+  
+  // 卡片点击事件委托（性能优化：单个监听器代替N个）
+  if (elCardGrid) {
+    elCardGrid.addEventListener('click', async (e) => {
+      const card = e.target.closest('article[data-id]');
+      if (!card) return;
+      const id = card.getAttribute('data-id');
+      const item = allItems.find((it) => it.id === id);
+      if (item) await openDetail(item);
+    });
+  }
+  
+  // 知识库列表事件委托（性能优化：单个监听器代替N个）
+  if (elRepoList) {
+    elRepoList.addEventListener('click', async (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (!actionBtn) return;
+      
+      e.stopPropagation();
+      const action = actionBtn.getAttribute('data-action');
+      const id = actionBtn.getAttribute('data-id');
+      const item = allItems.find((it) => it.id === id);
+      
+      if (!item) return;
+      
+      if (action === 'view') {
+        await openDetail(item);
+      } else if (action === 'archive') {
+        if (!confirm(`确定要归档 "${item.title}" 吗？归档后可在归档页面恢复。`)) {
+          return;
+        }
+        try {
+          showToast('正在归档...', 'loading');
+          await itemsAPI.archive(id);
+          allItems = allItems.filter((it) => it.id !== id);
+          scheduleRender(['cards', 'repoList', 'tagsCloud']);
+          if (stats) {
+            stats.total = (stats.total || 0) - 1;
+            updateDashboardStats();
+          }
+          showToast('归档成功', 'success');
+        } catch (error) {
+          console.error('归档失败:', error);
+          showToast(error.message || '归档失败', 'error');
+        }
+      } else if (action === 'delete') {
+        if (!confirm(`确定要删除 "${item.title}" 吗？删除后可在归档页面恢复。`)) {
+          return;
+        }
+        try {
+          showToast('正在删除...', 'loading');
+          await itemsAPI.delete(id);
+          allItems = allItems.filter((it) => it.id !== id);
+          scheduleRender(['cards', 'repoList', 'tagsCloud']);
+          if (stats) {
+            stats.total = (stats.total || 0) - 1;
+            updateDashboardStats();
+          }
+          showToast('删除成功', 'success');
+        } catch (error) {
+          console.error('删除失败:', error);
+          showToast(error.message || '删除失败', 'error');
+        }
+      }
+    });
+  }
+  
+  // 归档列表事件委托（性能优化：单个监听器代替N个）
+  if (elArchiveList) {
+    elArchiveList.addEventListener('click', async (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (!actionBtn) return;
+      
+      e.stopPropagation();
+      const action = actionBtn.getAttribute('data-action');
+      const id = actionBtn.getAttribute('data-id');
+      const item = archivedItems.find((it) => it.id === id);
+      
+      if (!item) return;
+      
+      if (action === 'view') {
+        await openDetail(item);
+      } else if (action === 'restore') {
+        try {
+          showToast('正在恢复...', 'loading');
+          await itemsAPI.restore(id);
+          archivedItems = archivedItems.filter((it) => it.id !== id);
+          await loadItems();
+          renderArchiveList();
+          if (stats) {
+            stats.total = (stats.total || 0) + 1;
+            stats.archived = (stats.archived || 0) - 1;
+            updateDashboardStats();
+          }
+          showToast('恢复成功', 'success');
+        } catch (error) {
+          console.error('恢复失败:', error);
+          showToast(error.message || '恢复失败', 'error');
+        }
+      } else if (action === 'permanent-delete') {
+        if (!confirm(`确定要永久删除 "${item.title}" 吗？此操作不可恢复！`)) {
+          return;
+        }
+        try {
+          showToast('正在永久删除...', 'loading');
+          await itemsAPI.permanentDelete(id);
+          archivedItems = archivedItems.filter((it) => it.id !== id);
+          renderArchiveList();
+          if (stats) {
+            stats.archived = (stats.archived || 0) - 1;
+            updateDashboardStats();
+          }
+          showToast('永久删除成功', 'success');
+        } catch (error) {
+          console.error('永久删除失败:', error);
+          showToast(error.message || '永久删除失败', 'error');
+        }
+      }
     });
   }
 
