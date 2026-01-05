@@ -1630,43 +1630,74 @@ function closeSettingsModal() {
 
 async function loadSettings() {
   try {
-    const res = await settingsAPI.get();
-    const data = res.data || {};
-    const configured = !!data.deepseek_api_key_configured;
-    apiConfigured = configured;
-
-    if (configured) {
+    // 加载用户管理模块
+    const { getCurrentUser, getCurrentUserApiKey, isCurrentUserApiKeyConfigured } = await import('./user-manager.js');
+    
+    // 获取当前用户信息
+    const currentUser = getCurrentUser();
+    const userApiKey = getCurrentUserApiKey();
+    const userApiConfigured = isCurrentUserApiKeyConfigured();
+    
+    // 更新用户信息显示
+    const currentUserNameEl = document.getElementById('current-user-name');
+    const currentUserApiStatusEl = document.getElementById('current-user-api-status');
+    if (currentUserNameEl) {
+      currentUserNameEl.textContent = currentUser.name || '用户1';
+    }
+    if (currentUserApiStatusEl) {
+      currentUserApiStatusEl.textContent = userApiConfigured 
+        ? 'API Key: 已配置' 
+        : 'API Key: 未配置（请配置您的个人API Key）';
+      currentUserApiStatusEl.className = userApiConfigured 
+        ? 'text-xs text-green-600 mt-1' 
+        : 'text-xs text-slate-400 mt-1';
+    }
+    
+    // 在输入框中显示当前用户的API Key（如果有）
+    if (elInputApiKey) {
+      if (userApiKey) {
+        // 显示masked版本
+        const masked = userApiKey.substring(0, 4) + '...' + userApiKey.substring(userApiKey.length - 4);
+        elInputApiKey.value = masked;
+      } else {
+        elInputApiKey.value = '';
+      }
+    }
+    
+    // 更新全局API配置状态（用于向后兼容）
+    apiConfigured = userApiConfigured;
+    
+    // 更新API状态显示（使用用户API Key状态）
+    if (userApiConfigured) {
       elApiStatusText.textContent = 'DeepSeek 已配置';
       elApiPill.classList.remove('hidden');
       elApiPill.querySelector('span.w-2').classList.remove('bg-red-500');
       elApiPill.querySelector('span.w-2').classList.add('bg-green-500');
       elApiPill.lastChild.textContent = ' DeepSeek 已连接';
-      
-      // 如果API Key已配置，在输入框中显示masked版本
-      if (data.deepseek_api_key && elInputApiKey) {
-        elInputApiKey.value = data.deepseek_api_key; // 显示masked版本，如 "sk-1...abcd"
-      }
     } else {
       elApiStatusText.textContent = 'API 未配置';
       elApiPill.classList.remove('hidden');
       elApiPill.querySelector('span.w-2').classList.remove('bg-green-500');
       elApiPill.querySelector('span.w-2').classList.add('bg-red-500');
       elApiPill.lastChild.textContent = ' DeepSeek 未连接';
+    }
+    
+    // 加载其他设置（模型、评估开关等）从服务器
+    try {
+      const res = await settingsAPI.get();
+      const data = res.data || {};
       
-      // 如果未配置，清空输入框
-      if (elInputApiKey) {
-        elInputApiKey.value = '';
+      if (data.deepseek_model) {
+        elSelectModel.value = data.deepseek_model;
       }
-    }
 
-    if (data.deepseek_model) {
-      elSelectModel.value = data.deepseek_model;
-    }
-
-    // 加载评估开关设置
-    if (elToggleEvaluation) {
-      const evaluationEnabled = data.enable_relevance_evaluation;
-      elToggleEvaluation.checked = evaluationEnabled === undefined || evaluationEnabled === 'true' || evaluationEnabled === true;
+      // 加载评估开关设置
+      if (elToggleEvaluation) {
+        const evaluationEnabled = data.enable_relevance_evaluation;
+        elToggleEvaluation.checked = evaluationEnabled === undefined || evaluationEnabled === 'true' || evaluationEnabled === true;
+      }
+    } catch (e) {
+      console.warn('加载服务器设置失败:', e);
     }
   } catch (error) {
     console.error('加载设置失败:', error);
@@ -1674,21 +1705,48 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  const apiKey = elInputApiKey.value.trim();
+  const apiKeyInput = elInputApiKey.value.trim();
   const model = elSelectModel.value;
   const enableRelevanceEvaluation = elToggleEvaluation ? elToggleEvaluation.checked : true;
 
   try {
-    await settingsAPI.update({ apiKey, model, enableRelevanceEvaluation });
+    // 加载用户管理模块
+    const { setCurrentUserApiKey, getCurrentUserApiKey } = await import('./user-manager.js');
+    
+    // 检查输入的是完整API Key还是masked版本
+    let apiKeyToSave = apiKeyInput;
+    const currentApiKey = getCurrentUserApiKey();
+    
+    // 如果输入的是masked版本（包含...），说明用户没有修改，保持原值
+    if (apiKeyInput.includes('...') && currentApiKey) {
+      apiKeyToSave = currentApiKey;
+    } else if (apiKeyInput && apiKeyInput.startsWith('sk-')) {
+      // 如果是完整的API Key，保存它
+      apiKeyToSave = apiKeyInput;
+    } else if (!apiKeyInput) {
+      // 如果清空了，删除API Key
+      apiKeyToSave = null;
+    } else {
+      // 其他情况，可能是用户输入了新的完整API Key
+      apiKeyToSave = apiKeyInput;
+    }
+    
+    // 保存到用户配置（localStorage）
+    if (apiKeyToSave) {
+      setCurrentUserApiKey(apiKeyToSave);
+    } else {
+      setCurrentUserApiKey(null);
+    }
+    
+    // 保存其他设置到服务器（向后兼容，保留全局设置）
+    await settingsAPI.update({ apiKey: null, model, enableRelevanceEvaluation }); // 不保存API Key到服务器
+    
     elSettingsMessage.textContent = '设置已保存';
     elSettingsMessage.className = 'mt-3 text-xs text-green-600';
-    apiConfigured = !!apiKey;
+    apiConfigured = !!apiKeyToSave;
     
-    // 重新加载设置，更新API Key显示
+    // 重新加载设置，更新显示
     await loadSettings();
-    
-    // 如果保存的是完整API Key，保存后应该显示masked版本
-    // loadSettings 会自动处理这个
   } catch (error) {
     console.error('保存设置失败:', error);
     elSettingsMessage.textContent = error.message || '保存失败';
@@ -1697,11 +1755,33 @@ async function saveSettings() {
 }
 
 async function testAPI() {
-  const apiKey = elInputApiKey.value.trim();
+  const apiKeyInput = elInputApiKey.value.trim();
   elSettingsMessage.textContent = '正在测试连接...';
   elSettingsMessage.className = 'mt-3 text-xs text-slate-500';
+  
   try {
-    const res = await settingsAPI.testAPI(apiKey || undefined);
+    // 加载用户管理模块
+    const { getCurrentUserApiKey } = await import('./user-manager.js');
+    
+    // 确定要测试的API Key
+    let apiKeyToTest = apiKeyInput;
+    const currentApiKey = getCurrentUserApiKey();
+    
+    // 如果输入的是masked版本，使用当前保存的API Key
+    if (apiKeyInput.includes('...') && currentApiKey) {
+      apiKeyToTest = currentApiKey;
+    } else if (!apiKeyInput || !apiKeyInput.startsWith('sk-')) {
+      // 如果输入为空或格式不对，使用当前保存的API Key
+      apiKeyToTest = currentApiKey;
+    }
+    
+    if (!apiKeyToTest) {
+      elSettingsMessage.textContent = '请先输入API Key';
+      elSettingsMessage.className = 'mt-3 text-xs text-red-600';
+      return;
+    }
+    
+    const res = await settingsAPI.testAPI(apiKeyToTest);
     elSettingsMessage.textContent = res.message;
     elSettingsMessage.className = `mt-3 text-xs ${
       res.success ? 'text-green-600' : 'text-red-600'
@@ -1709,6 +1789,50 @@ async function testAPI() {
   } catch (error) {
     elSettingsMessage.textContent = error.message || '测试失败';
     elSettingsMessage.className = 'mt-3 text-xs text-red-600';
+  }
+}
+
+// 切换用户
+async function handleSwitchUser() {
+  try {
+    const { getUserList, switchUser, createUser, getCurrentUserId } = await import('./user-manager.js');
+    
+    const userList = getUserList();
+    const currentUserId = getCurrentUserId();
+    
+    // 构建用户列表文本
+    const userListText = userList.map(u => {
+      const isCurrent = u.id === currentUserId;
+      return `${isCurrent ? '→ ' : '  '}${u.name} ${u.hasApiKey ? '(已配置API Key)' : '(未配置)'}`;
+    }).join('\n');
+    
+    // 显示切换用户对话框
+    const input = prompt(`当前用户列表:\n\n${userListText}\n\n输入新用户名创建用户，或输入已有用户名切换:\n`, '');
+    
+    if (input === null || !input.trim()) {
+      return; // 用户取消或输入为空
+    }
+    
+    const userName = input.trim();
+    
+    // 检查是否是已有用户
+    const existingUser = userList.find(u => u.name === userName);
+    if (existingUser) {
+      // 切换到已有用户
+      switchUser(existingUser.id);
+      showToast(`已切换到用户: ${existingUser.name}`, 'success');
+    } else {
+      // 创建新用户
+      const newUserId = createUser(userName);
+      switchUser(newUserId);
+      showToast(`已创建并切换到用户: ${userName}`, 'success');
+    }
+    
+    // 重新加载设置以更新显示
+    await loadSettings();
+  } catch (error) {
+    console.error('切换用户失败:', error);
+    showToast('切换用户失败: ' + (error.message || '未知错误'), 'error');
   }
 }
 
@@ -1940,6 +2064,12 @@ function bindEvents() {
   }
   if (elBtnSaveSettings) elBtnSaveSettings.addEventListener('click', saveSettings);
   if (elBtnTestApi) elBtnTestApi.addEventListener('click', testAPI);
+  
+  // 切换用户按钮
+  const elBtnSwitchUser = document.getElementById('btn-switch-user');
+  if (elBtnSwitchUser) {
+    elBtnSwitchUser.addEventListener('click', handleSwitchUser);
+  }
 
   // 导出
   if (elBtnExportJSON) {

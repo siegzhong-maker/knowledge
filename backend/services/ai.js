@@ -3,8 +3,15 @@ const { decryptFromString } = require('./crypto');
 
 /**
  * 获取DeepSeek API Key
+ * @param {string} userApiKey - 用户提供的API Key（可选，优先使用）
  */
-async function getApiKey() {
+async function getApiKey(userApiKey = null) {
+  // 如果用户提供了API Key，优先使用
+  if (userApiKey && userApiKey.startsWith('sk-')) {
+    return userApiKey;
+  }
+  
+  // 否则使用全局配置的API Key（向后兼容）
   const setting = await db.get('SELECT value FROM settings WHERE key = ?', ['deepseek_api_key']);
   if (!setting) {
     throw new Error('未配置DeepSeek API Key，请在设置中配置');
@@ -26,9 +33,12 @@ async function getModel() {
 
 /**
  * 调用DeepSeek API
+ * @param {Array} messages - 消息数组
+ * @param {Object} options - 选项
+ * @param {string} options.userApiKey - 用户提供的API Key（可选）
  */
 async function callDeepSeekAPI(messages, options = {}) {
-  const apiKey = await getApiKey();
+  const apiKey = await getApiKey(options.userApiKey);
   const model = await getModel();
 
   const requestBody = {
@@ -76,8 +86,11 @@ async function callDeepSeekAPI(messages, options = {}) {
 
 /**
  * 生成摘要
+ * @param {string} content - 内容
+ * @param {string} itemId - 项目ID（可选）
+ * @param {string} userApiKey - 用户API Key（可选）
  */
-async function generateSummary(content, itemId = null) {
+async function generateSummary(content, itemId = null, userApiKey = null) {
   const messages = [
     {
       role: 'system',
@@ -91,7 +104,8 @@ async function generateSummary(content, itemId = null) {
 
   const summary = await callDeepSeekAPI(messages, {
     max_tokens: 500,
-    temperature: 0.5
+    temperature: 0.5,
+    userApiKey
   });
 
   // 如果提供了itemId，自动保存摘要
@@ -107,8 +121,11 @@ async function generateSummary(content, itemId = null) {
 
 /**
  * AI对话（流式响应）
+ * @param {Array} messages - 消息数组
+ * @param {string} context - 上下文（可选）
+ * @param {string} userApiKey - 用户API Key（可选）
  */
-async function chat(messages, context = null) {
+async function chat(messages, context = null, userApiKey = null) {
   // 如果有上下文，添加到系统消息
   if (context) {
     const systemMessage = {
@@ -120,14 +137,15 @@ async function chat(messages, context = null) {
 
   return callDeepSeekAPI(messages, {
     stream: true,
-    max_tokens: 2000
+    max_tokens: 2000,
+    userApiKey
   });
 }
 
 /**
  * 标签建议
  */
-async function suggestTags(content) {
+async function suggestTags(content, userApiKey = null) {
   const messages = [
     {
       role: 'system',
@@ -141,7 +159,8 @@ async function suggestTags(content) {
 
   const tagsStr = await callDeepSeekAPI(messages, {
     max_tokens: 100,
-    temperature: 0.8
+    temperature: 0.8,
+    userApiKey
   });
 
   // 解析标签字符串
@@ -185,9 +204,10 @@ async function testConnection(apiKey = null) {
  * @param {string} pdfContent - PDF内容（可选）
  * @param {Object} context - 用户背景信息（可选）
  * @param {Object} docInfo - 文档信息 { title, category, theme, role }（可选）
+ * @param {string} userApiKey - 用户API Key（可选）
  * @returns {Promise<ReadableStream>}
  */
-async function consultantChat(messages, pdfContent = null, context = null, docInfo = null) {
+async function consultantChat(messages, pdfContent = null, context = null, docInfo = null, userApiKey = null) {
   // 动态生成System Prompt
   let systemPrompt = '';
   
@@ -258,7 +278,8 @@ ${pdfContent ? `\n\n**文档内容（请严格基于此内容回答）：**\n${p
   return callDeepSeekAPI(allMessages, {
     stream: true,
     max_tokens: 1000,
-    temperature: 0.5
+    temperature: 0.5,
+    userApiKey
   });
 }
 
@@ -332,7 +353,7 @@ function extractCitations(text, docId = null, docTitle = null) {
  * @param {string} title - 文档标题
  * @returns {Promise<Object>} { category, theme, description, keywords }
  */
-async function analyzeDocument(content, title = '') {
+async function analyzeDocument(content, title = '', userApiKey = null) {
   const sampleContent = content.substring(0, 10000); // 限制长度以提高效率
   
   const messages = [
@@ -360,7 +381,8 @@ async function analyzeDocument(content, title = '') {
   try {
     const response = await callDeepSeekAPI(messages, {
       max_tokens: 500,
-      temperature: 0.3
+      temperature: 0.3,
+      userApiKey
     });
     
     // 尝试解析JSON响应
@@ -428,7 +450,8 @@ async function matchDocument(question, documents) {
   try {
     const response = await callDeepSeekAPI(messages, {
       max_tokens: 200,
-      temperature: 0.3
+      temperature: 0.3,
+      userApiKey
     });
     
     const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -483,7 +506,7 @@ async function matchDocument(question, documents) {
  * @param {Object} docInfo - 文档信息 { title, category, theme, role }
  * @returns {string} 欢迎消息
  */
-async function generateWelcomeMessage(docInfo) {
+async function generateWelcomeMessage(docInfo, userApiKey = null) {
   const { title, category, theme, role } = docInfo;
   
   const messages = [
@@ -500,7 +523,8 @@ async function generateWelcomeMessage(docInfo) {
   try {
     const response = await callDeepSeekAPI(messages, {
       max_tokens: 200,
-      temperature: 0.7
+      temperature: 0.7,
+      userApiKey
     });
     return response.trim();
   } catch (error) {

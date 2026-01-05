@@ -32,7 +32,9 @@ class Database {
           const url = new URL(connectionString);
           const host = url.hostname;
           const port = url.port || '5432';
-          console.log(`[Database] 连接信息: ${url.protocol}//${url.username}@${host}:${port}${url.pathname}`);
+          const dbName = url.pathname.replace('/', '') || 'unknown';
+          console.log(`[Database] 连接信息: ${url.protocol}//${url.username}@${host}:${port}/${dbName}`);
+          console.log(`[Database] 数据库名称: ${dbName}`);
           
           // Railway 内部域名不需要 DNS 解析
           const isRailwayInternal = host.includes('railway.internal');

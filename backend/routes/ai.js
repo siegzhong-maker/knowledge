@@ -6,13 +6,13 @@ const db = require('../services/db');
 // 生成摘要
 router.post('/summary', async (req, res) => {
   try {
-    const { content, itemId } = req.body;
+    const { content, itemId, userApiKey } = req.body;
 
     if (!content) {
       return res.status(400).json({ success: false, message: '内容不能为空' });
     }
 
-    const summary = await generateSummary(content, itemId);
+    const summary = await generateSummary(content, itemId, userApiKey || null);
 
     res.json({
       success: true,
@@ -30,7 +30,7 @@ router.post('/summary', async (req, res) => {
 // AI对话（流式响应）
 router.post('/chat', async (req, res) => {
   try {
-    const { messages, context } = req.body;
+    const { messages, context, userApiKey } = req.body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ success: false, message: '消息不能为空' });
@@ -41,7 +41,7 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const stream = await chat(messages, context);
+    const stream = await chat(messages, context, userApiKey || null);
 
     // 读取流并发送SSE事件
     const reader = stream.getReader();
@@ -94,13 +94,13 @@ router.post('/chat', async (req, res) => {
 // 标签建议
 router.post('/suggest-tags', async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, userApiKey } = req.body;
 
     if (!content) {
       return res.status(400).json({ success: false, message: '内容不能为空' });
     }
 
-    const tags = await suggestTags(content);
+    const tags = await suggestTags(content, userApiKey || null);
 
     res.json({
       success: true,

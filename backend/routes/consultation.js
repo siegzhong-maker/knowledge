@@ -19,7 +19,8 @@ router.post('/analyze-document', async (req, res) => {
     }
 
     // 分析文档
-    const analysis = await analyzeDocument(item.raw_content || '', item.title || '');
+    const userApiKey = req.body.userApiKey || null;
+    const analysis = await analyzeDocument(item.raw_content || '', item.title || '', userApiKey);
     
     // 保存分析结果到数据库（可选）
     await db.run(
@@ -87,7 +88,8 @@ router.post('/match-document', async (req, res) => {
     });
 
     // 匹配文档
-    const match = await matchDocument(question, documents);
+    const userApiKey = req.body.userApiKey || null;
+    const match = await matchDocument(question, documents, userApiKey);
     
     // 获取匹配的文档信息
     const matchedDoc = documents.find(doc => doc.id === match.docId);
@@ -135,10 +137,11 @@ router.post('/welcome-message', async (req, res) => {
     }
 
     // 如果元数据不完整，先分析文档
+    const userApiKey = req.body.userApiKey || null;
     if (!metadata.category || !metadata.theme) {
       const itemFull = await db.get('SELECT raw_content FROM source_items WHERE id = ?', [docId]);
       if (itemFull) {
-        const analysis = await analyzeDocument(itemFull.raw_content || '', item.title || '');
+        const analysis = await analyzeDocument(itemFull.raw_content || '', item.title || '', userApiKey);
         metadata = { ...metadata, ...analysis };
       }
     }
@@ -149,7 +152,7 @@ router.post('/welcome-message', async (req, res) => {
       category: metadata.category || '通用',
       theme: metadata.theme || item.title,
       role: metadata.role || '知识助手'
-    });
+    }, userApiKey);
 
     res.json({
       success: true,
@@ -224,8 +227,11 @@ router.post('/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    // 获取用户API Key
+    const userApiKey = req.body.userApiKey || null;
+    
     // 调用咨询对话（动态模式，基于文档信息）
-    const stream = await consultantChat(messages, pdfContent, context, docInfo);
+    const stream = await consultantChat(messages, pdfContent, context, docInfo, userApiKey);
 
     // 读取流并发送SSE事件
     const reader = stream.getReader();

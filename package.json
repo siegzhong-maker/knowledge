@@ -11,6 +11,7 @@
     "migrate-kb": "node backend/scripts/migrate-to-multi-knowledge-bases.js",
     "migrate-to-pg": "node backend/scripts/migrate-sqlite-to-pg.js",
     "migrate-via-api": "node backend/scripts/migrate-via-api.js",
+    "diagnose": "node backend/scripts/diagnose.js",
     "postinstall": "npm run init-db || true"
   },
   "keywords": [

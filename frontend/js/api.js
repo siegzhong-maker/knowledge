@@ -3,19 +3,41 @@ const API_BASE = window.location.origin.includes('localhost')
   ? 'http://localhost:3000/api' 
   : '/api';
 
+// 获取用户API Key（如果已配置）
+async function getUserApiKey() {
+  try {
+    const { getCurrentUserApiKey } = await import('./user-manager.js');
+    return getCurrentUserApiKey();
+  } catch (e) {
+    console.warn('无法加载用户管理模块:', e);
+    return null;
+  }
+}
+
 async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
+  
+  // 获取用户API Key
+  const userApiKey = await getUserApiKey();
+  
+  // 准备请求体
+  let body = options.body;
+  if (body && typeof body === 'object') {
+    // 如果用户已配置API Key，添加到请求体
+    if (userApiKey) {
+      body.userApiKey = userApiKey;
+    }
+    body = JSON.stringify(body);
+  }
+  
   const config = {
     headers: {
       'Content-Type': 'application/json',
       ...options.headers
     },
-    ...options
+    ...options,
+    body
   };
-
-  if (config.body && typeof config.body === 'object') {
-    config.body = JSON.stringify(config.body);
-  }
 
   try {
     const response = await fetch(url, config);
@@ -102,10 +124,17 @@ export const aiAPI = {
   generateSummary: (content, itemId) => 
     apiRequest('/ai/summary', { method: 'POST', body: { content, itemId } }),
   chat: async (messages, context, onChunk) => {
+    // 获取用户API Key
+    const userApiKey = await getUserApiKey();
+    const requestBody = { messages, context };
+    if (userApiKey) {
+      requestBody.userApiKey = userApiKey;
+    }
+    
     const response = await fetch(`${API_BASE}/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, context })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -247,10 +276,17 @@ export const consultationAPI = {
       }
     }
     
+    // 获取用户API Key
+    const userApiKey = await getUserApiKey();
+    const requestBody = { messages, docId, context, docInfo, enableEvaluation: shouldEvaluate };
+    if (userApiKey) {
+      requestBody.userApiKey = userApiKey;
+    }
+    
     const response = await fetch(`${API_BASE}/consultation/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, docId, context, docInfo, enableEvaluation: shouldEvaluate })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {

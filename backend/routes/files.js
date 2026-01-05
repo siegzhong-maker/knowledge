@@ -48,56 +48,123 @@ router.get('/pdf/:id', async (req, res) => {
     // 获取上传目录路径（与upload.js保持一致）
     const uploadsDir = process.env.UPLOADS_PATH || 
                        (process.env.NODE_ENV === 'production' ? '/data/uploads' : path.resolve(__dirname, '../../backend/uploads'));
-    let filePath;
     
-    console.log('PDF文件请求 - 数据库中的file_path:', item.file_path);
-    console.log('PDF文件请求 - uploadsDir:', uploadsDir);
+    console.log('PDF文件请求 - 环境信息:', {
+      'NODE_ENV': process.env.NODE_ENV || '未设置',
+      'UPLOADS_PATH': process.env.UPLOADS_PATH || '未设置',
+      '数据库中的file_path': item.file_path,
+      '计算的上传目录': uploadsDir
+    });
     
-    // 处理文件路径：优先作为相对路径处理（新上传的文件使用相对路径）
-    // 兼容旧数据：如果file_path是绝对路径，也支持
+    // 尝试多个可能的文件路径
+    const possiblePaths = [];
+    
+    // 提取文件名（用于从旧路径迁移）
+    const fileName = path.basename(item.file_path);
+    
+    // 1. 如果file_path是绝对路径
     if (path.isAbsolute(item.file_path)) {
-      // 如果是绝对路径（旧数据兼容），直接使用
-      filePath = item.file_path;
-      console.log('PDF文件请求 - 使用绝对路径（旧数据）:', filePath);
-    } else {
-      // 如果是相对路径（新数据），相对于uploads目录
-      filePath = path.join(uploadsDir, item.file_path);
-      console.log('PDF文件请求 - 使用相对路径:', filePath);
+      // 先尝试直接使用（可能是有效的绝对路径）
+      possiblePaths.push({
+        path: item.file_path,
+        reason: '绝对路径（数据库存储）'
+      });
+      
+      // 如果绝对路径指向旧的临时目录，尝试提取文件名在Volume中查找
+      if (item.file_path.includes('/app/backend/uploads/') || 
+          item.file_path.includes('/backend/uploads/')) {
+        possiblePaths.push({
+          path: path.join(uploadsDir, fileName),
+          reason: '从旧路径提取文件名（迁移场景）'
+        });
+      }
     }
     
-    // 规范化路径（解析..和.）
-    filePath = path.normalize(filePath);
+    // 2. 作为相对路径，相对于uploadsDir
+    possiblePaths.push({
+      path: path.join(uploadsDir, item.file_path),
+      reason: '相对路径（相对于上传目录）'
+    });
     
-    // 确保文件路径在uploads目录内（防止路径遍历攻击）
-    const resolvedFilePath = path.resolve(filePath);
-    const resolvedUploadsDir = path.resolve(uploadsDir);
-    
-    if (!resolvedFilePath.startsWith(resolvedUploadsDir)) {
-      console.error('文件路径安全检查失败:', {
-        filePath: resolvedFilePath,
-        uploadsDir: resolvedUploadsDir
-      });
-      return res.status(403).json({ 
-        success: false, 
-        message: '文件访问被拒绝' 
+    // 3. 如果file_path看起来像文件名（只有文件名，没有目录），尝试直接在上传目录中查找
+    if (!item.file_path.includes('/') && !item.file_path.includes('\\')) {
+      possiblePaths.push({
+        path: path.join(uploadsDir, item.file_path),
+        reason: '仅文件名（在上传目录中查找）'
       });
     }
     
-    // 检查文件是否存在
-    try {
-      await fs.access(resolvedFilePath);
-      console.log('PDF文件存在:', resolvedFilePath);
-    } catch (error) {
-      console.error('PDF文件不存在:', resolvedFilePath, error);
+    // 4. 尝试使用文件名（从任何路径中提取）
+    if (fileName !== item.file_path) {
+      possiblePaths.push({
+        path: path.join(uploadsDir, fileName),
+        reason: '提取文件名（兼容旧路径）'
+      });
+    }
+    
+    // 5. 尝试生产环境路径（如果当前不是生产环境）
+    if (process.env.NODE_ENV !== 'production' && !process.env.UPLOADS_PATH) {
+      possiblePaths.push({
+        path: path.join('/data/uploads', item.file_path),
+        reason: '生产环境路径（回退尝试）'
+      });
+    }
+    
+    // 尝试每个可能的路径
+    let resolvedFilePath = null;
+    let foundPath = null;
+    
+    for (const attempt of possiblePaths) {
+      try {
+        const normalizedPath = path.normalize(attempt.path);
+        const resolvedPath = path.resolve(normalizedPath);
+        const resolvedUploadsDir = path.resolve(uploadsDir);
+        
+        // 安全检查：确保路径在uploads目录内
+        if (!resolvedPath.startsWith(resolvedUploadsDir)) {
+          console.warn(`路径安全检查失败 (${attempt.reason}):`, {
+            resolvedPath,
+            resolvedUploadsDir
+          });
+          continue;
+        }
+        
+        // 检查文件是否存在
+        await fs.access(resolvedPath);
+        resolvedFilePath = resolvedPath;
+        foundPath = attempt;
+        console.log(`✓ 找到文件 (${attempt.reason}):`, resolvedPath);
+        break;
+      } catch (error) {
+        console.log(`✗ 文件不存在 (${attempt.reason}):`, attempt.path, error.message);
+        continue;
+      }
+    }
+    
+    // 如果所有路径都失败
+    if (!resolvedFilePath) {
+      console.error('PDF文件未找到，尝试的路径:', possiblePaths.map(p => p.path));
+      console.error('请检查:');
+      console.error('1. Volume是否正确挂载到 /data/uploads');
+      console.error('2. NODE_ENV是否设置为 production');
+      console.error('3. 文件是否存在于Volume中');
+      console.error('4. 数据库中的file_path是否正确');
+      
       return res.status(404).json({ 
         success: false, 
-        message: `PDF文件不存在: ${error.message}` 
+        message: 'PDF文件未找到。请检查Volume挂载和文件路径配置。',
+        details: {
+          attemptedPaths: possiblePaths.map(p => ({ path: p.path, reason: p.reason })),
+          uploadsDir,
+          file_path: item.file_path,
+          nodeEnv: process.env.NODE_ENV || '未设置'
+        }
       });
     }
     
     // 设置响应头
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
+    res.setHeader('Content-Disposition', `inline; filename="${path.basename(resolvedFilePath)}"`);
     
     // 支持Range请求（用于断点续传和流式加载）
     const stat = await fs.stat(resolvedFilePath);
@@ -107,6 +174,7 @@ router.get('/pdf/:id', async (req, res) => {
     console.log('返回PDF文件:', {
       id,
       filePath: resolvedFilePath,
+      foundVia: foundPath?.reason,
       fileSize,
       hasRange: !!range
     });

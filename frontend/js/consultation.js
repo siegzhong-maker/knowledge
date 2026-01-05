@@ -2337,6 +2337,15 @@ export function copyMessage(messageId) {
 // 检查API是否配置
 async function checkApiConfigured() {
   try {
+    // 优先检查用户API Key
+    const { isCurrentUserApiKeyConfigured } = await import('./user-manager.js');
+    const userApiConfigured = isCurrentUserApiKeyConfigured();
+    
+    if (userApiConfigured) {
+      return true;
+    }
+    
+    // 向后兼容：检查全局API Key
     const res = await settingsAPI.get();
     const data = res.data || {};
     return !!data.deepseek_api_key_configured;

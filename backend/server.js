@@ -153,24 +153,57 @@ app.get('/api/diagnose/files', async (req, res) => {
       // 检查文件是否真的存在
       if (diagnostics.uploadsDirectory.accessible && pdfItems.length > 0) {
         const missingFiles = [];
-        for (const item of pdfItems.slice(0, 5)) { // 只检查前5个
+        
+        for (const item of pdfItems.slice(0, 10)) { // 检查前10个
           if (item.file_path) {
-            try {
-              const filePath = path.isAbsolute(item.file_path) 
-                ? item.file_path 
-                : path.join(uploadsDir, item.file_path);
-              await fs.access(filePath);
-            } catch (fileErr) {
+            let fileExists = false;
+            const fileName = path.basename(item.file_path);
+            
+            // 尝试多个可能的路径
+            const possiblePaths = [];
+            
+            // 1. 如果是绝对路径，先尝试直接使用
+            if (path.isAbsolute(item.file_path)) {
+              possiblePaths.push(item.file_path);
+              // 如果指向旧目录，尝试提取文件名
+              if (item.file_path.includes('/app/backend/uploads/') || 
+                  item.file_path.includes('/backend/uploads/')) {
+                possiblePaths.push(path.join(uploadsDir, fileName));
+              }
+            }
+            
+            // 2. 作为相对路径
+            possiblePaths.push(path.join(uploadsDir, item.file_path));
+            
+            // 3. 仅文件名
+            possiblePaths.push(path.join(uploadsDir, fileName));
+            
+            // 尝试每个路径
+            for (const filePath of possiblePaths) {
+              try {
+                await fs.access(filePath);
+                fileExists = true;
+                break;
+              } catch (e) {
+                // 继续尝试下一个路径
+              }
+            }
+            
+            if (!fileExists) {
               missingFiles.push({
                 id: item.id,
                 title: item.title,
-                file_path: item.file_path
+                file_path: item.file_path,
+                note: path.isAbsolute(item.file_path) 
+                  ? '旧路径（可能已丢失）' 
+                  : '文件不存在'
               });
             }
           }
         }
         if (missingFiles.length > 0) {
-          diagnostics.recommendations.push(`⚠️ 发现 ${missingFiles.length} 个PDF文件记录，但物理文件不存在。可能原因：Volume未配置、文件已删除或路径不匹配`);
+          diagnostics.recommendations.push(`⚠️ 发现 ${missingFiles.length} 个PDF文件记录，但物理文件不存在。这些文件可能是在配置Volume之前上传的，需要重新上传。`);
+          diagnostics.missingFiles = missingFiles;
         }
       }
     } catch (dbErr) {
