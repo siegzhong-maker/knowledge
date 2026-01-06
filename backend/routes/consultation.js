@@ -228,8 +228,14 @@ router.post('/chat', async (req, res) => {
       console.log('[评估] 使用全局设置，shouldEvaluate:', shouldEvaluate, '数据库设置:', setting?.value);
     }
 
+    // 获取用户API Key（需要在匹配文档之前获取）
+    const userApiKey = req.body.userApiKey || null;
+
     // 获取PDF内容（如果提供了docId）
     let pdfContent = null;
+    let evaluationDocId = docId; // 用于评估的文档ID
+    let finalDocInfo = docInfo; // 最终使用的文档信息
+    
     if (docId) {
       const item = await db.get('SELECT raw_content, page_content FROM source_items WHERE id = ? AND type = ?', [docId, 'pdf']);
       if (item) {
@@ -254,21 +260,135 @@ router.post('/chat', async (req, res) => {
           }
         }
       }
+    } else {
+      // 如果没有docId，尝试自动匹配文档
+      const userQuestion = messages.length > 0 ? messages[messages.length - 1].content : null;
+      if (userQuestion) {
+        try {
+          // 获取所有PDF文档
+          const items = await db.all('SELECT id, title, metadata FROM source_items WHERE type = ? AND status != ?', ['pdf', 'archived']);
+          
+          if (items && items.length > 0) {
+            // 解析文档元数据
+            const documents = items.map(item => {
+              let metadata = {};
+              try {
+                metadata = item.metadata ? JSON.parse(item.metadata) : {};
+              } catch (e) {
+                metadata = {
+                  category: '通用',
+                  theme: item.title || '未分类',
+                  description: '',
+                  keywords: [],
+                  role: '知识助手'
+                };
+              }
+              return {
+                id: item.id,
+                title: item.title,
+                ...metadata
+              };
+            });
+            
+            // 匹配文档
+            const match = await matchDocument(userQuestion, documents, userApiKey);
+            
+            // 如果匹配成功（相关度 > 30），使用匹配的文档
+            if (match.docId && match.relevance > 30) {
+              evaluationDocId = match.docId;
+              const matchedItem = await db.get('SELECT raw_content, page_content, metadata FROM source_items WHERE id = ? AND type = ?', [match.docId, 'pdf']);
+              
+              if (matchedItem) {
+                pdfContent = matchedItem.raw_content;
+                
+                // 解析元数据作为 docInfo
+                try {
+                  finalDocInfo = matchedItem.metadata ? JSON.parse(matchedItem.metadata) : {};
+                  const matchedDoc = items.find(i => i.id === match.docId);
+                  if (matchedDoc) {
+                    finalDocInfo.title = matchedDoc.title || finalDocInfo.title;
+                  }
+                } catch (e) {
+                  console.warn('解析匹配文档的metadata失败:', e);
+                  // 如果解析失败，使用基本信息
+                  const matchedDoc = items.find(i => i.id === match.docId);
+                  if (matchedDoc) {
+                    finalDocInfo = {
+                      title: matchedDoc.title,
+                      category: '通用',
+                      theme: matchedDoc.title,
+                      role: '知识助手'
+                    };
+                  }
+                }
+                
+                // 添加分页内容
+                if (matchedItem.page_content) {
+                  try {
+                    const pageContent = typeof matchedItem.page_content === 'string' 
+                      ? JSON.parse(matchedItem.page_content) 
+                      : matchedItem.page_content;
+                    if (Array.isArray(pageContent) && pageContent.length > 0) {
+                      const pageContentStr = pageContent.map((page, idx) => {
+                        const pageNum = page.pageNum || page.page || (idx + 1);
+                        const content = page.content || page.text || '';
+                        return `Page ${pageNum}: ${content}`;
+                      }).join('\n\n');
+                      pdfContent = pdfContent + '\n\n--- 分页内容 ---\n\n' + pageContentStr;
+                    }
+                  } catch (e) {
+                    console.warn('解析page_content失败:', e);
+                  }
+                }
+                
+                // 限制内容长度
+                if (pdfContent && pdfContent.length > 50000) {
+                  pdfContent = pdfContent.substring(0, 50000);
+                }
+                
+                console.log('[自动匹配] 匹配到文档:', match.docId, '相关度:', match.relevance, '理由:', match.reason);
+              }
+            } else {
+              console.log('[自动匹配] 未找到相关文档，相关度:', match.relevance);
+            }
+          }
+        } catch (e) {
+          console.warn('[自动匹配] 匹配文档失败:', e);
+        }
+      }
+      
+      // 如果没有匹配到文档但启用了评估，尝试获取所有知识库文档内容用于评估
+      if (!pdfContent && shouldEvaluate) {
+        try {
+          const items = await db.all('SELECT id, title, raw_content FROM source_items WHERE type = ? AND status != ? LIMIT 10', ['pdf', 'archived']);
+          if (items && items.length > 0) {
+            const maxDocs = Math.min(3, items.length);
+            const combinedContent = items.slice(0, maxDocs)
+              .map(item => `--- 文档: ${item.title || '未命名'} ---\n${(item.raw_content || '').substring(0, 10000)}`)
+              .join('\n\n');
+            
+            if (combinedContent.trim().length > 0) {
+              pdfContent = combinedContent;
+              evaluationDocId = items[0].id;
+              console.log('[评估] 未提供docId，使用知识库内容进行评估，文档数:', maxDocs);
+            }
+          }
+        } catch (e) {
+          console.warn('[评估] 获取知识库内容失败:', e);
+        }
+      }
     }
 
     console.log('[评估] pdfContent 状态:', pdfContent ? `存在，长度: ${pdfContent.length}` : '不存在');
-    console.log('[评估] docId:', docId);
+    console.log('[评估] docId:', docId, 'evaluationDocId:', evaluationDocId);
 
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-
-    // 获取用户API Key
-    const userApiKey = req.body.userApiKey || null;
     
     // 调用咨询对话（动态模式，基于文档信息）
-    const stream = await consultantChat(messages, pdfContent, context, docInfo, userApiKey);
+    const stream = await consultantChat(messages, pdfContent, context, finalDocInfo, userApiKey);
 
     // 读取流并发送SSE事件
     const reader = stream.getReader();
@@ -277,7 +397,7 @@ router.post('/chat', async (req, res) => {
     let citations = [];
     
     // 获取文档信息用于设置引用
-    const docTitle = docInfo?.title || null;
+    const docTitle = finalDocInfo?.title || null;
     
     // 获取用户问题（用于评估）
     const userQuestion = messages.length > 0 ? messages[messages.length - 1].content : null;
@@ -286,8 +406,8 @@ router.post('/chat', async (req, res) => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          // 流结束，提取所有引用并设置docId
-          citations = extractCitations(fullContent, docId, docTitle);
+          // 流结束，提取所有引用并设置docId（使用匹配到的文档ID或原始docId）
+          citations = extractCitations(fullContent, evaluationDocId || docId, docTitle);
           if (citations.length > 0) {
             res.write(`data: ${JSON.stringify({ content: '', citations: citations })}\n\n`);
           }
@@ -307,8 +427,8 @@ router.post('/chat', async (req, res) => {
               
               // 获取分页内容用于引用验证
               let pageContent = null;
-              if (docId) {
-                const item = await db.get('SELECT page_content FROM source_items WHERE id = ? AND type = ?', [docId, 'pdf']);
+              if (evaluationDocId) {
+                const item = await db.get('SELECT page_content FROM source_items WHERE id = ? AND type = ?', [evaluationDocId, 'pdf']);
                 if (item && item.page_content) {
                   pageContent = item.page_content;
                 }
@@ -349,8 +469,8 @@ router.post('/chat', async (req, res) => {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
             if (data === '[DONE]') {
-              // 流结束，提取所有引用并设置docId
-              citations = extractCitations(fullContent, docId, docTitle);
+              // 流结束，提取所有引用并设置docId（使用匹配到的文档ID或原始docId）
+              citations = extractCitations(fullContent, evaluationDocId || docId, docTitle);
               if (citations.length > 0) {
                 res.write(`data: ${JSON.stringify({ content: '', citations: citations })}\n\n`);
               }
@@ -380,8 +500,8 @@ router.post('/chat', async (req, res) => {
                 
                 // 处理完成消息
                 if (json.choices[0].finish_reason) {
-                  // 流结束，提取所有引用并设置docId
-                  citations = extractCitations(fullContent, docId, docTitle);
+                  // 流结束，提取所有引用并设置docId（使用匹配到的文档ID或原始docId）
+                  citations = extractCitations(fullContent, evaluationDocId || docId, docTitle);
                   if (citations.length > 0) {
                     res.write(`data: ${JSON.stringify({ content: '', citations: citations })}\n\n`);
                   }
@@ -401,8 +521,8 @@ router.post('/chat', async (req, res) => {
                       
                       // 获取分页内容用于引用验证
                       let pageContent = null;
-                      if (docId) {
-                        const item = await db.get('SELECT page_content FROM source_items WHERE id = ? AND type = ?', [docId, 'pdf']);
+                      if (evaluationDocId) {
+                        const item = await db.get('SELECT page_content FROM source_items WHERE id = ? AND type = ?', [evaluationDocId, 'pdf']);
                         if (item && item.page_content) {
                           pageContent = item.page_content;
                         }

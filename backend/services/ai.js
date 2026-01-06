@@ -415,9 +415,10 @@ async function analyzeDocument(content, title = '', userApiKey = null) {
  * 根据用户问题匹配最相关的文档
  * @param {string} question - 用户问题
  * @param {Array} documents - 文档列表 [{ id, title, category, theme, description, keywords }]
+ * @param {string} userApiKey - 用户API Key（可选）
  * @returns {Promise<Object>} { docId, relevance, reason }
  */
-async function matchDocument(question, documents) {
+async function matchDocument(question, documents, userApiKey = null) {
   if (!documents || documents.length === 0) {
     return { docId: null, relevance: 0, reason: '没有可用文档' };
   }
