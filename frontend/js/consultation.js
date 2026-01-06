@@ -778,7 +778,7 @@ window.continueConversation = async function(conversationId) {
 // 为文档开始新对话
 window.startNewConversationForDoc = async function(docId) {
   await loadDoc(docId, false);
-  await createNewConversation();
+  await createNewConversation(true); // 保留文档状态，因为用户明确选择了文档
 };
 
 // 启动对话（根据用户问题自动匹配文档）
@@ -3564,13 +3564,22 @@ export async function loadConversationFromHistory(indexOrId) {
     }
   }
   
-  // 如果对话有关联的文档，自动加载文档
+  // 处理文档状态：如果对话有关联的文档，加载文档；否则清空文档状态
   if (conversation.docId && conversation.docId !== state.currentDocId) {
     try {
       await loadDoc(conversation.docId, false); // 不自动打开面板，保持当前状态
     } catch (e) {
       console.warn('加载关联文档失败:', e);
+      // 如果加载失败，清空文档状态
+      state.currentDocId = null;
+      state.currentDoc = null;
+      state.currentDocInfo = null;
     }
+  } else if (!conversation.docId) {
+    // 如果对话没有关联文档，清空文档状态
+    state.currentDocId = null;
+    state.currentDoc = null;
+    state.currentDocInfo = null;
   }
   
   // 加载对话到当前状态
@@ -3622,7 +3631,9 @@ export async function loadConversationFromHistory(indexOrId) {
   // 渲染历史消息
   renderHistory();
   
-  // 更新聊天状态指示器
+  // 更新UI状态
+  updateModeDisplay();
+  updatePlaceholder();
   updateChatStatusIndicator();
   
   // 滚动到底部
@@ -3830,6 +3841,11 @@ export async function deleteConversation(indexOrId) {
       state.history = [];
       state.currentConversationId = null;
       
+      // 清空文档和知识库状态（删除对话后应该是全新状态）
+      state.currentDocId = null;
+      state.currentDoc = null;
+      state.currentDocInfo = null;
+      
       // 重新获取所有对话，找到最新的作为当前对话
       invalidateConversationsCache();
       const allConversations = await getAllConversations();
@@ -3838,6 +3854,15 @@ export async function deleteConversation(indexOrId) {
         const latest = sorted[0];
         state.currentConversationId = latest.id;
         state.history = latest.messages || [];
+        
+        // 如果加载的对话有关联文档，恢复文档状态
+        if (latest.docId) {
+          try {
+            await loadDoc(latest.docId, false);
+          } catch (e) {
+            console.warn('加载对话关联文档失败:', e);
+          }
+        }
       }
       
       // 清空聊天流并重新加载
@@ -3850,13 +3875,14 @@ export async function deleteConversation(indexOrId) {
       if (state.history.length > 0) {
         renderHistory();
       } else {
-        // 显示欢迎消息（检查是否有有效的文档信息）
-        if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
-          addAiMessage(`您好！我是${state.currentDocInfo.role || '知识助手'}，可以基于《${state.currentDocInfo.title}》为您解答相关问题。请告诉我您的问题。`);
-        } else {
-          addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
-        }
+        // 显示通用欢迎消息（文档状态已清空）
+        addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
       }
+      
+      // 更新UI状态
+      updateModeDisplay();
+      updatePlaceholder();
+      updateChatStatusIndicator();
     }
     
     // 清除缓存，因为对话列表已更新
@@ -4360,7 +4386,7 @@ function renderHistory() {
 }
 
 // 创建新对话
-export async function createNewConversation() {
+export async function createNewConversation(preserveDocState = false) {
   // 先保存当前对话（如果有）
   if (state.currentConversationId && state.history.length > 0) {
     await saveHistory();
@@ -4375,6 +4401,13 @@ export async function createNewConversation() {
   state.branches = [];
   state.currentBranchId = null;
   state.currentConversationId = newConversationId;
+  
+  // 如果不保留文档状态，清空文档和知识库引用
+  if (!preserveDocState) {
+    state.currentDocId = null;
+    state.currentDoc = null;
+    state.currentDocInfo = null;
+  }
   
   // 更新存储中的当前对话ID
   try {
@@ -4418,7 +4451,9 @@ export async function createNewConversation() {
     addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
   }
   
-  // 更新聊天状态指示器
+  // 更新UI状态
+  updateModeDisplay();
+  updatePlaceholder();
   updateChatStatusIndicator();
   
   // 滚动到底部
@@ -4450,6 +4485,11 @@ export async function clearConversation() {
   state.branches = [];
   state.currentBranchId = null;
   state.currentConversationId = newConversationId;
+  
+  // 清空文档和知识库状态（清除对话后应该是全新状态）
+  state.currentDocId = null;
+  state.currentDoc = null;
+  state.currentDocInfo = null;
   
   // 更新存储中的当前对话ID
   try {
@@ -4483,21 +4523,13 @@ export async function clearConversation() {
     container.innerHTML = '';
   }
   
-  // 显示欢迎消息（检查是否有有效的文档信息）
-  if (state.currentDocId && state.currentDocInfo && state.currentDocInfo.title) {
-    try {
-      const welcomeResult = await consultationAPI.getWelcomeMessage(state.currentDocId);
-      if (welcomeResult.success && welcomeResult.data.welcomeMessage) {
-        addAiMessage(welcomeResult.data.welcomeMessage);
-      } else {
-        addAiMessage(`您好！我是${state.currentDocInfo.role || '知识助手'}，可以基于《${state.currentDocInfo.title}》为您解答相关问题。请告诉我您的问题。`);
-      }
-    } catch (error) {
-      addAiMessage(`您好！我是${state.currentDocInfo.role || '知识助手'}，可以基于《${state.currentDocInfo.title}》为您解答相关问题。请告诉我您的问题。`);
-    }
-  } else {
-    addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
-  }
+  // 显示通用欢迎消息（文档状态已清空）
+  addAiMessage('您好！我是您的知识助手。\n\n我可以帮您解答基于知识库的问题。请告诉我您想了解什么，或者从左侧选择参考文档开始。');
+  
+  // 更新UI状态
+  updateModeDisplay();
+  updatePlaceholder();
+  updateChatStatusIndicator();
   
   // 滚动到底部
   scrollToBottom();
