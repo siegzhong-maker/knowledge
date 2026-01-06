@@ -3,58 +3,106 @@ const { extractCitations } = require('./ai');
 
 /**
  * 文本相似度评估
- * 使用简单的词频匹配和Jaccard相似度
+ * 使用改进的词频匹配、Jaccard相似度和短语匹配
  */
 function calculateTextSimilarity(answer, knowledgeBase) {
   if (!answer || !knowledgeBase || knowledgeBase.length === 0) {
-    return { similarity: 0, matchedPhrases: [] };
+    return { similarity: 0, contentRatio: 0, matchedPhrases: [] };
   }
 
-  // 简单的分词函数（中文和英文）
+  // 改进的分词函数（中文和英文）
   function tokenize(text) {
     // 移除标点符号，转换为小写
     const cleaned = text.toLowerCase().replace(/[^\w\s\u4e00-\u9fa5]/g, ' ');
-    // 分割成词（支持中英文）
-    const words = cleaned.split(/\s+/).filter(w => w.length > 1);
-    return words;
+    
+    // 对于中文，按字符分割（因为中文没有空格分隔）
+    // 对于英文，按空格分割
+    const words = [];
+    let currentWord = '';
+    
+    for (let i = 0; i < cleaned.length; i++) {
+      const char = cleaned[i];
+      const isChinese = /[\u4e00-\u9fa5]/.test(char);
+      const isEnglish = /[a-z0-9]/.test(char);
+      
+      if (isChinese) {
+        // 中文：每个字符作为一个词，同时保留2-3字短语
+        if (currentWord && !isEnglish) {
+          words.push(currentWord);
+          currentWord = '';
+        }
+        words.push(char);
+      } else if (isEnglish) {
+        currentWord += char;
+      } else {
+        // 空格或标点
+        if (currentWord.length > 0) {
+          words.push(currentWord);
+          currentWord = '';
+        }
+      }
+    }
+    if (currentWord.length > 0) {
+      words.push(currentWord);
+    }
+    
+    return words.filter(w => w.length > 0);
   }
 
-  const answerTokens = new Set(tokenize(answer));
-  const kbTokens = new Set(tokenize(knowledgeBase));
+  const answerTokens = tokenize(answer);
+  const kbTokens = tokenize(knowledgeBase);
+  
+  const answerTokenSet = new Set(answerTokens);
+  const kbTokenSet = new Set(kbTokens);
   
   // 计算交集和并集
-  const intersection = new Set([...answerTokens].filter(x => kbTokens.has(x)));
+  const intersection = new Set([...answerTokens].filter(x => kbTokenSet.has(x)));
   const union = new Set([...answerTokens, ...kbTokens]);
   
   // Jaccard相似度
-  const jaccardSimilarity = intersection.size / union.size;
+  const jaccardSimilarity = union.size > 0 ? intersection.size / union.size : 0;
   
-  // 计算匹配的关键短语（连续2-3个词）
+  // 计算匹配的关键短语（连续2-4个词，中文和英文都支持）
   const matchedPhrases = [];
-  const answerWords = tokenize(answer);
   const kbText = knowledgeBase.toLowerCase();
+  const answerText = answer.toLowerCase();
   
-  // 查找匹配的短语（滑动窗口）
-  for (let i = 0; i < answerWords.length - 1; i++) {
-    const phrase2 = answerWords.slice(i, i + 2).join(' ');
-    const phrase3 = i < answerWords.length - 2 ? answerWords.slice(i, i + 3).join(' ') : null;
-    
-    if (kbText.includes(phrase2) && !matchedPhrases.includes(phrase2)) {
-      matchedPhrases.push(phrase2);
-    }
-    if (phrase3 && kbText.includes(phrase3) && !matchedPhrases.includes(phrase3)) {
-      matchedPhrases.push(phrase3);
+  // 查找匹配的短语（滑动窗口，支持2-4词短语）
+  for (let phraseLength = 2; phraseLength <= 4; phraseLength++) {
+    for (let i = 0; i <= answerTokens.length - phraseLength; i++) {
+      const phrase = answerTokens.slice(i, i + phraseLength).join('');
+      // 检查短语是否在知识库中（支持中英文）
+      if (kbText.includes(phrase) && !matchedPhrases.some(p => p.includes(phrase) || phrase.includes(p))) {
+        matchedPhrases.push(phrase);
+      }
     }
   }
   
-  // 计算匹配内容比例
-  const matchedWords = matchedPhrases.flatMap(p => p.split(' ')).length;
-  const contentRatio = answerWords.length > 0 ? matchedWords / answerWords.length : 0;
+  // 计算匹配内容比例（匹配短语的权重更高）
+  const matchedWords = new Set();
+  matchedPhrases.forEach(phrase => {
+    const phraseTokens = tokenize(phrase);
+    phraseTokens.forEach(token => matchedWords.add(token));
+  });
+  
+  // 同时计算单个词的匹配
+  answerTokens.forEach(token => {
+    if (kbTokenSet.has(token)) {
+      matchedWords.add(token);
+    }
+  });
+  
+  const contentRatio = answerTokens.length > 0 ? matchedWords.size / answerTokens.length : 0;
+  
+  // 综合相似度：Jaccard相似度（40%）+ 内容匹配比例（60%），匹配短语多的额外加分
+  const phraseBonus = Math.min(matchedPhrases.length * 2, 20); // 最多加20分
+  const baseSimilarity = jaccardSimilarity * 0.4 + contentRatio * 0.6;
+  const finalSimilarity = Math.min(baseSimilarity * 100 + phraseBonus, 100);
   
   return {
-    similarity: Math.min(jaccardSimilarity * 100, 100), // 转换为0-100分
-    contentRatio: Math.min(contentRatio * 100, 100),
-    matchedPhrases: matchedPhrases.slice(0, 10) // 最多返回10个匹配短语
+    similarity: Math.round(finalSimilarity),
+    contentRatio: Math.round(contentRatio * 100),
+    matchedPhrases: matchedPhrases.slice(0, 15) // 最多返回15个匹配短语
   };
 }
 
@@ -145,7 +193,17 @@ async function aiEvaluate(answer, knowledgeBase, question) {
   const messages = [
     {
       role: 'system',
-      content: `你是一个评估专家。请评估AI回答是否真正基于提供的知识库内容，还是主要依赖AI的通用知识。
+      content: `你是一个评估专家。请评估AI回答是否基于提供的知识库内容。
+
+评估标准：
+1. 如果回答的核心内容、关键信息、具体数据或案例来自知识库，即使包含一些通用解释、总结或补充说明，也应该给高分（70-100分）
+2. 如果回答主要基于知识库内容，只是用AI的通用知识进行解释、总结或补充，应该给中高分（60-80分）
+3. 如果回答只是泛泛而谈，没有使用知识库中的具体内容，才应该给低分（0-50分）
+
+评分原则：
+- 重点关注回答是否使用了知识库中的具体信息，而不是是否完全依赖知识库
+- 如果回答引用了知识库中的内容（即使进行了改写或总结），应该给高分
+- 只要回答的核心内容来自知识库，就应该给70分以上
 
 请以JSON格式返回评估结果，格式如下：
 {
@@ -168,7 +226,7 @@ ${kbSample}
 AI回答：
 ${answerSample}
 
-请评估这个回答是否真正基于知识库内容。`
+请评估这个回答是否基于知识库内容。重点关注回答是否使用了知识库中的具体信息、数据或案例，即使包含一些通用解释也应该给高分。`
     }
   ];
 
@@ -234,16 +292,35 @@ async function evaluateRelevance(answer, knowledgeBase, citations, pageContent, 
 
   // 1. 文本相似度评估
   const textSimilarity = calculateTextSimilarity(answer, knowledgeBase);
+  console.log('[相关性评估] 文本相似度:', {
+    similarity: textSimilarity.similarity,
+    contentRatio: textSimilarity.contentRatio,
+    matchedPhrasesCount: textSimilarity.matchedPhrases?.length || 0,
+    samplePhrases: textSimilarity.matchedPhrases?.slice(0, 3) || []
+  });
 
   // 2. 引用验证
   const citationValidation = validateCitations(answer, citations, pageContent);
+  console.log('[相关性评估] 引用验证:', {
+    totalCount: citationValidation.totalCount,
+    validCount: citationValidation.validCount,
+    invalidCount: citationValidation.invalidCount,
+    valid: citationValidation.valid
+  });
 
   // 3. AI评估（异步，可能较慢）
   let aiEvaluation;
   try {
     aiEvaluation = await aiEvaluate(answer, knowledgeBase, question);
+    console.log('[相关性评估] AI评估:', {
+      relevanceScore: aiEvaluation.relevanceScore,
+      basedOnKnowledgeBase: aiEvaluation.basedOnKnowledgeBase,
+      knowledgeBaseRatio: aiEvaluation.knowledgeBaseRatio,
+      aiKnowledgeRatio: aiEvaluation.aiKnowledgeRatio,
+      explanation: aiEvaluation.explanation?.substring(0, 100) // 只记录前100字符
+    });
   } catch (error) {
-    console.error('AI评估出错:', error);
+    console.error('[相关性评估] AI评估出错:', error);
     aiEvaluation = {
       relevanceScore: 50,
       basedOnKnowledgeBase: false,
@@ -254,16 +331,37 @@ async function evaluateRelevance(answer, knowledgeBase, citations, pageContent, 
   }
 
   // 4. 综合评分
-  // 权重：文本相似度30%，引用验证20%，AI评估50%
-  const citationScore = citationValidation.totalCount > 0
-    ? (citationValidation.validCount / citationValidation.totalCount) * 100
-    : 50; // 没有引用时给中等分数
+  // 权重：文本相似度40%，引用验证30%，AI评估30%
+  // 优化无引用时的处理：如果文本相似度高，即使没有引用也应该给高分
+  let citationScore;
+  if (citationValidation.totalCount > 0) {
+    citationScore = (citationValidation.validCount / citationValidation.totalCount) * 100;
+    console.log('[相关性评估] 引用分数计算: 有引用，分数 =', citationScore);
+  } else {
+    // 没有引用时，如果文本相似度高（>60），说明回答确实基于知识库，给高分
+    if (textSimilarity.similarity > 60) {
+      citationScore = 80; // 给高分，因为文本相似度高说明确实使用了知识库
+      console.log('[相关性评估] 引用分数计算: 无引用但文本相似度高(' + textSimilarity.similarity + ')，给高分 =', citationScore);
+    } else {
+      citationScore = 50; // 文本相似度也不高，给中等分数
+      console.log('[相关性评估] 引用分数计算: 无引用且文本相似度低(' + textSimilarity.similarity + ')，给中等分数 =', citationScore);
+    }
+  }
 
-  const overallScore = Math.round(
-    textSimilarity.similarity * 0.3 +
-    citationScore * 0.2 +
-    aiEvaluation.relevanceScore * 0.5
-  );
+  const textScore = textSimilarity.similarity * 0.4;
+  const citationScoreWeighted = citationScore * 0.3;
+  const aiScoreWeighted = aiEvaluation.relevanceScore * 0.3;
+  const overallScore = Math.round(textScore + citationScoreWeighted + aiScoreWeighted);
+
+  console.log('[相关性评估] 综合评分计算:', {
+    textSimilarity: textSimilarity.similarity,
+    textScoreWeighted: textScore.toFixed(2),
+    citationScore: citationScore,
+    citationScoreWeighted: citationScoreWeighted.toFixed(2),
+    aiScore: aiEvaluation.relevanceScore,
+    aiScoreWeighted: aiScoreWeighted.toFixed(2),
+    overallScore: overallScore
+  });
 
   return {
     overallScore: Math.min(Math.max(overallScore, 0), 100),
@@ -280,4 +378,5 @@ module.exports = {
   validateCitations,
   aiEvaluate
 };
+
 
