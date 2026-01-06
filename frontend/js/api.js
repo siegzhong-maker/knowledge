@@ -276,9 +276,22 @@ export const consultationAPI = {
       }
     }
     
+    // 确保 false 值也被正确传递，而不是转换为 undefined
+    // 如果 shouldEvaluate 是 false，应该明确传递 false
+    const evaluationParam = shouldEvaluate === undefined ? undefined : shouldEvaluate;
+    
+    console.log('[前端] 相关性评估参数:', {
+      enableEvaluation,
+      sessionSetting: localStorage.getItem('knowledge_relevance_evaluation_enabled'),
+      shouldEvaluate,
+      evaluationParam,
+      docId,
+      hasDocInfo: !!docInfo
+    });
+    
     // 获取用户API Key
     const userApiKey = await getUserApiKey();
-    const requestBody = { messages, docId, context, docInfo, enableEvaluation: shouldEvaluate };
+    const requestBody = { messages, docId, context, docInfo, enableEvaluation: evaluationParam };
     if (userApiKey) {
       requestBody.userApiKey = userApiKey;
     }

@@ -215,13 +215,17 @@ router.post('/chat', async (req, res) => {
 
     // 检查评估开关状态
     let shouldEvaluate = false;
-    if (enableEvaluation !== undefined) {
+    console.log('[评估] 接收到的 enableEvaluation:', enableEvaluation, '类型:', typeof enableEvaluation);
+    
+    if (enableEvaluation !== undefined && enableEvaluation !== null) {
       // 请求级别优先
       shouldEvaluate = enableEvaluation === true || enableEvaluation === 'true';
+      console.log('[评估] 使用请求级别设置，shouldEvaluate:', shouldEvaluate);
     } else {
       // 检查全局设置
       const setting = await db.get('SELECT value FROM settings WHERE key = ?', ['enable_relevance_evaluation']);
       shouldEvaluate = !setting || setting.value === 'true' || setting.value === true;
+      console.log('[评估] 使用全局设置，shouldEvaluate:', shouldEvaluate, '数据库设置:', setting?.value);
     }
 
     // 获取PDF内容（如果提供了docId）
@@ -251,6 +255,9 @@ router.post('/chat', async (req, res) => {
         }
       }
     }
+
+    console.log('[评估] pdfContent 状态:', pdfContent ? `存在，长度: ${pdfContent.length}` : '不存在');
+    console.log('[评估] docId:', docId);
 
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -286,9 +293,17 @@ router.post('/chat', async (req, res) => {
           }
           
           // 如果启用评估，执行评估（在发送[DONE]之前）
+          console.log('[评估] 检查评估条件:', {
+            shouldEvaluate,
+            hasFullContent: !!fullContent,
+            fullContentLength: fullContent?.length || 0,
+            hasPdfContent: !!pdfContent,
+            pdfContentLength: pdfContent?.length || 0
+          });
+          
           if (shouldEvaluate && fullContent && pdfContent) {
             try {
-              console.log('开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
+              console.log('[评估] 开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
               
               // 获取分页内容用于引用验证
               let pageContent = null;
@@ -302,17 +317,23 @@ router.post('/chat', async (req, res) => {
               // 等待评估完成后再发送[DONE]
               try {
                 const evaluationResult = await evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion);
-                console.log('评估完成，分数:', evaluationResult.overallScore);
+                console.log('[评估] 评估完成，分数:', evaluationResult.overallScore);
                 
                 // 在响应关闭前发送评估结果
                 res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
               } catch (evalError) {
-                console.error('评估过程出错:', evalError);
+                console.error('[评估] 评估过程出错:', evalError);
                 // 评估失败不影响主流程，继续发送[DONE]
               }
             } catch (evalError) {
-              console.error('启动评估失败:', evalError);
+              console.error('[评估] 启动评估失败:', evalError);
             }
+          } else {
+            console.log('[评估] 评估未执行，原因:', {
+              shouldEvaluate,
+              hasFullContent: !!fullContent,
+              hasPdfContent: !!pdfContent
+            });
           }
           
           res.write('data: [DONE]\n\n');
@@ -366,9 +387,17 @@ router.post('/chat', async (req, res) => {
                   }
                   
                   // 如果启用评估，执行评估（在发送[DONE]之前）
+                  console.log('[评估] 检查评估条件 (流式完成):', {
+                    shouldEvaluate,
+                    hasFullContent: !!fullContent,
+                    fullContentLength: fullContent?.length || 0,
+                    hasPdfContent: !!pdfContent,
+                    pdfContentLength: pdfContent?.length || 0
+                  });
+                  
                   if (shouldEvaluate && fullContent && pdfContent) {
                     try {
-                      console.log('开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
+                      console.log('[评估] 开始执行评估，回答长度:', fullContent.length, '知识库长度:', pdfContent.length);
                       
                       // 获取分页内容用于引用验证
                       let pageContent = null;
@@ -382,17 +411,23 @@ router.post('/chat', async (req, res) => {
                       // 等待评估完成后再发送[DONE]
                       try {
                         const evaluationResult = await evaluateRelevance(fullContent, pdfContent, citations, pageContent, userQuestion);
-                        console.log('评估完成，分数:', evaluationResult.overallScore);
+                        console.log('[评估] 评估完成，分数:', evaluationResult.overallScore);
                         
                         // 在响应关闭前发送评估结果
                         res.write(`data: ${JSON.stringify({ evaluation: evaluationResult })}\n\n`);
                       } catch (evalError) {
-                        console.error('评估过程出错:', evalError);
+                        console.error('[评估] 评估过程出错:', evalError);
                         // 评估失败不影响主流程，继续发送[DONE]
                       }
                     } catch (evalError) {
-                      console.error('启动评估失败:', evalError);
+                      console.error('[评估] 启动评估失败:', evalError);
                     }
+                  } else {
+                    console.log('[评估] 评估未执行 (流式完成)，原因:', {
+                      shouldEvaluate,
+                      hasFullContent: !!fullContent,
+                      hasPdfContent: !!pdfContent
+                    });
                   }
                   
                   res.write('data: [DONE]\n\n');

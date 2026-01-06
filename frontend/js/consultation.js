@@ -1296,6 +1296,13 @@ export async function handleConversation(text) {
       ? sessionEvaluationEnabled === 'true' 
       : null; // null表示使用全局设置
     
+    console.log('[前端] 发送消息时的评估状态:', {
+      localStorageValue: sessionEvaluationEnabled,
+      enableEvaluation,
+      currentDocId: state.currentDocId,
+      currentDocInfo: state.currentDocInfo
+    });
+    
     // 创建AI消息占位符，显示加载状态
     responseEl = addAiMessage('正在思考...', true, []);
     
@@ -2434,6 +2441,8 @@ export async function regenerateMessage(messageId) {
     // 向前查找对应的用户消息（应该在前一个位置）
     let userMessageEl = null;
     let userMessageIndex = -1;
+    
+    // 方法1: 通过 justify-end 类查找（用户消息右对齐）
     for (let i = messageIndex - 1; i >= 0; i--) {
       const msgEl = allMessages[i];
       if (msgEl.classList.contains('justify-end')) {
@@ -2444,15 +2453,65 @@ export async function regenerateMessage(messageId) {
       }
     }
     
+    // 方法2: 如果方法1失败，尝试通过 .msg-user 类查找
     if (!userMessageEl) {
-      console.error('找不到对应的用户消息');
+      for (let i = messageIndex - 1; i >= 0; i--) {
+        const msgEl = allMessages[i];
+        const userMsg = msgEl.querySelector('.msg-user');
+        if (userMsg) {
+          userMessageEl = msgEl;
+          userMessageIndex = i;
+          break;
+        }
+      }
+    }
+    
+    // 方法3: 如果前两种方法都失败，尝试从 state.history 中查找
+    if (!userMessageEl) {
+      console.warn('无法通过DOM找到用户消息，尝试从历史记录中查找');
+      // 从后往前查找，找到最后一个用户消息
+      for (let i = state.history.length - 1; i >= 0; i--) {
+        const msg = state.history[i];
+        if (msg.role === 'user') {
+          // 检查这是否是对应的消息对
+          if (i + 1 < state.history.length && state.history[i + 1].role === 'assistant') {
+            // 尝试通过内容匹配找到DOM元素
+            const userContent = msg.content;
+            for (let j = messageIndex - 1; j >= 0; j--) {
+              const msgEl = allMessages[j];
+              const msgUserEl = msgEl.querySelector('.msg-user');
+              if (msgUserEl && msgUserEl.textContent?.trim() === userContent) {
+                userMessageEl = msgEl;
+                userMessageIndex = j;
+                break;
+              }
+            }
+            if (userMessageEl) break;
+          }
+        }
+      }
+    }
+    
+    if (!userMessageEl) {
+      console.error('找不到对应的用户消息，消息索引:', messageIndex, '总消息数:', allMessages.length);
+      console.error('尝试查找的消息ID:', messageId);
+      if (window.showToast) {
+        window.showToast('无法找到对应的用户消息，请刷新页面后重试', 'error');
+      } else {
+        alert('无法找到对应的用户消息，请刷新页面后重试');
+      }
       return;
     }
     
     // 获取用户消息的内容
     const userMessageContent = userMessageEl.querySelector('.msg-user')?.textContent?.trim();
     if (!userMessageContent) {
-      console.error('无法获取用户消息内容');
+      console.error('无法获取用户消息内容，DOM结构:', userMessageEl.innerHTML.substring(0, 200));
+      if (window.showToast) {
+        window.showToast('无法获取用户消息内容，请刷新页面后重试', 'error');
+      } else {
+        alert('无法获取用户消息内容，请刷新页面后重试');
+      }
       return;
     }
     
