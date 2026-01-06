@@ -1,6 +1,7 @@
 import { itemsAPI, parseAPI, aiAPI, settingsAPI, tagsAPI, exportAPI } from './api.js';
 import { storage } from './storage.js';
 import { formatTime, truncate, isURL, debounce, throttle } from './utils.js';
+import { showToast, showLoadingToast } from './toast.js';
 
 // 配置 Marked.js
 if (typeof marked !== 'undefined') {
@@ -63,18 +64,18 @@ let allItems = [];
 let archivedItems = [];
 let currentFilter = 'all';
 let currentView = 'dashboard';
-let currentStatusFilter = 'all'; // 用于知识库页面的状态筛选
+let currentStatusFilter = 'all'; // 用于文档库页面的状态筛选
 let currentItem = null;
-let repoSortBy = 'created_at'; // 知识库排序字段：title, created_at, page_count
+let repoSortBy = 'created_at'; // 文档库排序字段：title, created_at, page_count
 let repoSortOrder = 'desc'; // 排序方向：asc, desc
 let archiveSortBy = 'updated_at'; // 归档排序字段：title, updated_at, page_count
 let archiveSortOrder = 'desc'; // 排序方向：asc, desc
 let apiConfigured = false;
 let globalSearchTerm = '';
 let stats = null;
-let repoTotalCount = 0; // 知识库总数量
-let repoLoadedCount = 0; // 知识库已加载数量
-let repoCurrentPage = 1; // 知识库当前页码
+let repoTotalCount = 0; // 文档库总数量
+let repoLoadedCount = 0; // 文档库已加载数量
+let repoCurrentPage = 1; // 文档库当前页码
 let archiveTotalCount = 0; // 归档总数量
 let archiveLoadedCount = 0; // 归档已加载数量
 let archiveCurrentPage = 1; // 归档当前页码
@@ -116,8 +117,9 @@ function scheduleRender(types) {
 // 元素获取
 const $ = (id) => document.getElementById(id);
 
-const elQuickInput = $('quick-input');
-const elGlobalSearch = $('global-search');
+// 已删除：顶部搜索栏
+// const elQuickInput = $('quick-input');
+// const elGlobalSearch = $('global-search');
 const elCardGrid = $('card-grid');
 const elRepoList = $('repo-list');
 const elDashboardSubtitle = $('dashboard-subtitle');
@@ -146,6 +148,7 @@ const elViewDashboard = $('view-dashboard');
 const elViewRepository = $('view-repository');
 const elViewArchive = $('view-archive');
 const elViewTags = $('view-tags');
+const elViewKnowledgeItems = $('view-knowledge-items');
 const elViewDetail = $('view-detail');
 const elArchiveList = $('archive-list');
 const elArchiveSearchInput = $('archive-search-input');
@@ -158,7 +161,8 @@ const elBtnBatchSummary = $('btn-batch-summary');
 const elBtnCloseDetail = $('btn-close-detail');
 const elRepoSearchInput = $('repo-search-input');
 const elTagsContainer = $('tags-container');
-const elToastContainer = $('toast-container');
+// Toast系统已统一到 toast.js，不再需要本地容器引用
+// const elToastContainer = $('toast-container');
 
 // PDF预览器状态
 let pdfViewerState = {
@@ -173,33 +177,7 @@ let pdfViewerState = {
 // 当前选中的行ID
 let selectedRowId = null;
 
-// 简单 Toast
-function showToast(message, type = 'success') {
-  const toast = document.createElement('div');
-  toast.className =
-    'glass px-4 py-3 rounded-lg shadow-xl border border-slate-200 flex items-center space-x-3 transform translate-y-10 opacity-0 transition-all duration-300 pointer-events-auto min-w-[260px]';
-
-  let icon = '<i class="fa-solid fa-check-circle text-green-500"></i>';
-  if (type === 'error') icon = '<i class="fa-solid fa-circle-xmark text-red-500"></i>';
-  if (type === 'info') icon = '<i class="fa-solid fa-info-circle text-blue-500"></i>';
-  if (type === 'loading') icon = '<i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i>';
-
-  toast.innerHTML = `
-    ${icon}
-    <span class="text-sm font-medium text-slate-700">${message}</span>
-  `;
-
-  elToastContainer.appendChild(toast);
-
-  requestAnimationFrame(() => {
-    toast.classList.remove('translate-y-10', 'opacity-0');
-  });
-
-  setTimeout(() => {
-    toast.classList.add('translate-y-10', 'opacity-0');
-    setTimeout(() => toast.remove(), 300);
-  }, 2800);
-}
+// Toast系统已统一到 toast.js，已在文件顶部导入
 
 // 视图切换
 function switchView(view) {
@@ -207,26 +185,12 @@ function switchView(view) {
   // 保存当前视图到 localStorage
   storage.set('lastView', view);
   
-  [elViewConsultation, elViewDashboard, elViewRepository, elViewArchive, elViewTags].forEach((el) => {
+  [elViewConsultation, elViewDashboard, elViewRepository, elViewArchive, elViewTags, elViewKnowledgeItems].forEach((el) => {
     if (!el) return;
     el.classList.add('hidden');
   });
 
-  // 控制全局搜索框的显示/隐藏
-  if (elGlobalSearch) {
-    const searchContainer = elGlobalSearch.closest('.relative.group');
-    if (view === 'consultation') {
-      // 咨询工作台视图时隐藏搜索框
-      if (searchContainer) {
-        searchContainer.classList.add('hidden');
-      }
-    } else {
-      // 其他视图时显示搜索框
-      if (searchContainer) {
-        searchContainer.classList.remove('hidden');
-      }
-    }
-  }
+  // 已删除：全局搜索框显示/隐藏逻辑
 
   if (view === 'consultation' && elViewConsultation) {
     elViewConsultation.classList.remove('hidden');
@@ -270,6 +234,47 @@ function switchView(view) {
     setTimeout(() => updateSortIcons('archive'), 100);
   }
   if (view === 'tags') elViewTags.classList.remove('hidden');
+  if (view === 'knowledge-items' && elViewKnowledgeItems) {
+    elViewKnowledgeItems.classList.remove('hidden');
+    // 初始化Lucide图标（文档库视图需要）
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons(elViewKnowledgeItems);
+    }
+    // 初始化文档库视图
+    import('./knowledge-items.js').then(({ initKnowledgeView, handleFilterChange, handleSearch }) => {
+      initKnowledgeView();
+      // 绑定筛选和搜索事件
+      const filterButtons = document.querySelectorAll('.knowledge-filter-btn');
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const filter = btn.dataset.filter;
+          filterButtons.forEach(b => {
+            b.classList.remove('bg-slate-800', 'text-white');
+            b.classList.add('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+          });
+          btn.classList.add('bg-slate-800', 'text-white');
+          btn.classList.remove('bg-white', 'text-slate-600', 'border', 'border-slate-200');
+          handleFilterChange(filter);
+        });
+      });
+      
+      const searchInput = document.getElementById('knowledge-search-input');
+      if (searchInput) {
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+          clearTimeout(searchTimeout);
+          searchTimeout = setTimeout(() => {
+            handleSearch(e.target.value);
+          }, 300);
+        });
+      }
+      
+      // 暴露刷新函数
+      window.refreshKnowledgeList = () => {
+        initKnowledgeView();
+      };
+    });
+  }
 
   document.querySelectorAll('.nav-item').forEach((btn) => {
     btn.classList.remove('bg-slate-800', 'text-white');
@@ -280,6 +285,9 @@ function switchView(view) {
     }
   });
 }
+
+// 暴露switchView到全局作用域（供HTML内联事件使用）
+window.switchView = switchView;
 
 // Sidebar 移动端
 function toggleSidebar(open) {
@@ -298,7 +306,6 @@ function setFilter(filter) {
   currentFilter = filter;
   currentTagFilter = null; // 清除标签筛选
   globalSearchTerm = ''; // 清除搜索
-  if (elGlobalSearch) elGlobalSearch.value = '';
   document.querySelectorAll('.filter-btn').forEach((btn) => {
     btn.classList.remove('bg-slate-800', 'text-white');
     btn.classList.add('bg-white', 'text-slate-600', 'border', 'border-slate-200');
@@ -411,7 +418,7 @@ function renderCards() {
   // 事件委托已在bindEvents中设置，无需重复绑定
 }
 
-// 渲染知识库列表
+// 渲染文档库列表
 function renderRepoList() {
   const search = (elRepoSearchInput?.value || '').trim();
   let data = allItems;
@@ -502,6 +509,14 @@ function renderRepoList() {
       </td>
       <td class="px-6 py-3 whitespace-nowrap text-sm">
         <div class="flex items-center gap-2">
+          <button
+            data-action="extract"
+            data-id="${item.id}"
+            class="text-blue-600 hover:text-blue-800 transition-colors"
+            title="提取知识"
+          >
+            <i class="fa-solid fa-sparkles"></i>
+          </button>
           <button
             data-action="view"
             data-id="${item.id}"
@@ -969,7 +984,6 @@ let currentTagFilter = null;
 function filterByTag(tag) {
   currentTagFilter = tag;
   globalSearchTerm = ''; // 清除搜索
-  if (elGlobalSearch) elGlobalSearch.value = '';
   switchView('dashboard');
   scheduleRender(['cards', 'repoList']);
   showToast(`已筛选标签: #${tag}`, 'info');
@@ -1013,17 +1027,24 @@ async function handleRenameTag(oldTag, newTag) {
       return;
     }
 
-    showToast('正在更新标签...', 'loading');
+    const loadingToast = showLoadingToast('正在更新标签...');
 
-    for (const item of itemsToUpdate) {
-      const newTags = (item.tags || []).map((t) => (t === oldTag ? newTag : t));
-      await itemsAPI.update(item.id, { tags: newTags });
+    try {
+      for (const item of itemsToUpdate) {
+        const newTags = (item.tags || []).map((t) => (t === oldTag ? newTag : t));
+        await itemsAPI.update(item.id, { tags: newTags });
+      }
+
+      // 重新加载数据
+      await loadItems();
+      renderTagsCloud();
+      loadingToast.close();
+      showToast('标签重命名成功', 'success');
+    } catch (error) {
+      loadingToast.close();
+      console.error('重命名标签失败:', error);
+      showToast(error.message || '重命名标签失败', 'error');
     }
-
-    // 重新加载数据
-    await loadItems();
-    renderTagsCloud();
-    showToast('标签重命名成功', 'success');
   } catch (error) {
     console.error('重命名标签失败:', error);
     showToast(error.message || '重命名标签失败', 'error');
@@ -1045,17 +1066,24 @@ async function handleDeleteTag(tag) {
       return;
     }
 
-    showToast('正在删除标签...', 'loading');
+    const loadingToast = showLoadingToast('正在删除标签...');
 
-    for (const item of itemsToUpdate) {
-      const newTags = (item.tags || []).filter((t) => t !== tag);
-      await itemsAPI.update(item.id, { tags: newTags });
+    try {
+      for (const item of itemsToUpdate) {
+        const newTags = (item.tags || []).filter((t) => t !== tag);
+        await itemsAPI.update(item.id, { tags: newTags });
+      }
+
+      // 重新加载数据
+      await loadItems();
+      renderTagsCloud();
+      loadingToast.close();
+      showToast('标签删除成功', 'success');
+    } catch (error) {
+      loadingToast.close();
+      console.error('删除标签失败:', error);
+      showToast(error.message || '删除标签失败', 'error');
     }
-
-    // 重新加载数据
-    await loadItems();
-    renderTagsCloud();
-    showToast('标签删除成功', 'success');
   } catch (error) {
     console.error('删除标签失败:', error);
     showToast(error.message || '删除标签失败', 'error');
@@ -1087,9 +1115,13 @@ async function openDetail(item) {
   // 检查raw_content是否存在且不为空字符串
   const hasContent = item.raw_content && item.raw_content.trim().length > 0;
   
-  if (!hasContent) {
+  // 对于PDF文档，统一在initPDFViewer中显示toast，这里不显示
+  // 对于非PDF文档，显示统一的"正在加载..."
+  const isPDF = item.type === 'pdf' && item.file_path;
+  
+  if (!hasContent && !isPDF) {
     try {
-      showToast('正在加载详情...', 'loading');
+      // 不显示loading toast，因为文档基本信息已经显示
       const res = await itemsAPI.getById(item.id);
       if (res.success && res.data) {
         item = res.data;
@@ -1112,11 +1144,34 @@ async function openDetail(item) {
         if (archiveIndex !== -1) {
           archivedItems[archiveIndex] = item;
         }
+        // 不显示成功toast，因为文档已经显示出来了
       }
     } catch (error) {
       console.error('加载详情失败:', error);
-      showToast('加载详情失败: ' + (error.message || '未知错误'), 'error');
+      // 只在失败时显示错误toast
+      showToast('加载失败: ' + (error.message || '未知错误'), 'error');
       // 如果加载失败，仍然显示基本信息，只是没有raw_content
+    }
+  } else if (!hasContent && isPDF) {
+    // PDF文档需要从API获取，但不显示toast（由initPDFViewer统一处理）
+    try {
+      const res = await itemsAPI.getById(item.id);
+      if (res.success && res.data) {
+        item = res.data;
+        // 更新allItems中的对应项
+        const index = allItems.findIndex(it => it.id === item.id);
+        if (index !== -1) {
+          allItems[index] = item;
+        }
+        // 也更新archivedItems中的对应项
+        const archiveIndex = archivedItems.findIndex(it => it.id === item.id);
+        if (archiveIndex !== -1) {
+          archivedItems[archiveIndex] = item;
+        }
+      }
+    } catch (error) {
+      console.error('加载详情失败:', error);
+      // PDF加载失败会在initPDFViewer中处理
     }
   }
   
@@ -1171,6 +1226,16 @@ async function openDetail(item) {
             <span>${formatTime(item.created_at)}</span>
             ${item.page_count ? `<span class="ml-3">共 ${item.page_count} 页</span>` : ''}
           </div>
+          <div class="flex items-center gap-2">
+            <button
+              id="btn-extract-knowledge"
+              class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              data-doc-id="${item.id}"
+            >
+              <i class="fa-solid fa-sparkles"></i>
+              <span>提取知识</span>
+            </button>
+          </div>
         </div>
         <h1 id="detail-title" class="text-2xl md:text-3xl font-bold text-slate-900 leading-tight mb-2">
           ${item.title}
@@ -1214,6 +1279,35 @@ async function openDetail(item) {
       btnBackDetail.addEventListener('click', closeDetail);
     }
     
+    // 绑定提取知识按钮事件
+    const btnExtract = document.getElementById('btn-extract-knowledge');
+    if (btnExtract) {
+      btnExtract.addEventListener('click', async () => {
+        try {
+          const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
+          const { extractFromDocument } = await import('./knowledge-extraction.js');
+          const { showToast } = await import('./toast.js');
+          
+          const currentKbId = getCurrentKnowledgeBaseId();
+          // 不再显示toast，进度信息由底部进度条显示
+          
+          await extractFromDocument(item.id, currentKbId, (progress) => {
+            if (progress.status === 'completed') {
+              // 可选：自动跳转到知识库视图
+              setTimeout(() => {
+                switchView('knowledge-items');
+                closeDetail();
+              }, 1500);
+            }
+            // 进度信息由进度条显示，不再使用toast
+          });
+        } catch (error) {
+          console.error('提取知识失败:', error);
+          // 错误信息由进度条显示，不再使用toast
+        }
+      });
+    }
+    
     // 初始化PDF预览
     initPDFViewer(item.id, item.file_path);
   } else {
@@ -1229,26 +1323,38 @@ async function openDetail(item) {
         </button>
       </div>
       <header class="mb-8 border-b border-slate-100 pb-5">
-        <div class="flex items-center text-xs text-slate-500 mb-3">
-          <span class="inline-flex items-center mr-3 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-            item.type === 'link'
-              ? 'bg-blue-100 text-blue-700'
-              : item.type === 'memo'
-              ? 'bg-purple-100 text-purple-700'
-              : 'bg-slate-100 text-slate-700'
-          }">
-            ${item.type === 'link'
-              ? '<i class="fa-solid fa-link mr-1"></i> 链接'
-              : item.type === 'memo'
-              ? '<i class="fa-solid fa-sticky-note mr-1"></i> 备忘录'
-              : 'TEXT'}
-          </span>
-          <span>${formatTime(item.created_at)}</span>
-          ${
-            item.original_url
-              ? `<a href="${item.original_url}" target="_blank" class="ml-4 text-indigo-600 hover:underline text-xs">原始链接 ↗</a>`
-              : ''
-          }
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center text-xs text-slate-500">
+            <span class="inline-flex items-center mr-3 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
+              item.type === 'link'
+                ? 'bg-blue-100 text-blue-700'
+                : item.type === 'memo'
+                ? 'bg-purple-100 text-purple-700'
+                : 'bg-slate-100 text-slate-700'
+            }">
+              ${item.type === 'link'
+                ? '<i class="fa-solid fa-link mr-1"></i> 链接'
+                : item.type === 'memo'
+                ? '<i class="fa-solid fa-sticky-note mr-1"></i> 备忘录'
+                : 'TEXT'}
+            </span>
+            <span>${formatTime(item.created_at)}</span>
+            ${
+              item.original_url
+                ? `<a href="${item.original_url}" target="_blank" class="ml-4 text-indigo-600 hover:underline text-xs">原始链接 ↗</a>`
+                : ''
+            }
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              id="btn-extract-knowledge"
+              class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              data-doc-id="${item.id}"
+            >
+              <i class="fa-solid fa-sparkles"></i>
+              <span>提取知识</span>
+            </button>
+          </div>
         </div>
         <h1 id="detail-title" class="text-2xl md:text-3xl font-bold text-slate-900 leading-tight mb-3">
           ${item.title}
@@ -1296,6 +1402,35 @@ async function openDetail(item) {
     const btnBackDetail = document.getElementById('btn-back-detail');
     if (btnBackDetail) {
       btnBackDetail.addEventListener('click', closeDetail);
+    }
+    
+    // 绑定提取知识按钮事件
+    const btnExtract = document.getElementById('btn-extract-knowledge');
+    if (btnExtract) {
+      btnExtract.addEventListener('click', async () => {
+        try {
+          const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
+          const { extractFromDocument } = await import('./knowledge-extraction.js');
+          const { showToast } = await import('./toast.js');
+          
+          const currentKbId = getCurrentKnowledgeBaseId();
+          // 不再显示toast，进度信息由底部进度条显示
+          
+          await extractFromDocument(item.id, currentKbId, (progress) => {
+            if (progress.status === 'completed') {
+              // 可选：自动跳转到知识库视图
+              setTimeout(() => {
+                switchView('knowledge-items');
+                closeDetail();
+              }, 1500);
+            }
+            // 进度信息由进度条显示，不再使用toast
+          });
+        } catch (error) {
+          console.error('提取知识失败:', error);
+          // 错误信息由进度条显示，不再使用toast
+        }
+      });
     }
   }
 
@@ -1374,27 +1509,38 @@ async function handleSaveEdit() {
   }
 
   try {
-    showToast('正在保存...', 'loading');
-    await itemsAPI.update(currentItem.id, {
-      title: newTitle,
-      raw_content: newContent
-    });
+    const loadingToast = showLoadingToast('正在保存...');
+    try {
+      await itemsAPI.update(currentItem.id, {
+        title: newTitle,
+        raw_content: newContent
+      });
 
-    // 更新本地数据
-    currentItem.title = newTitle;
-    currentItem.raw_content = newContent;
-    allItems = allItems.map((it) =>
-      it.id === currentItem.id ? { ...it, title: newTitle, raw_content: newContent } : it
-    );
+      // 更新本地数据
+      currentItem.title = newTitle;
+      currentItem.raw_content = newContent;
+      allItems = allItems.map((it) =>
+        it.id === currentItem.id ? { ...it, title: newTitle, raw_content: newContent } : it
+      );
 
-    isEditing = false;
-    await openDetail(currentItem); // 重新渲染
-    scheduleRender(['cards', 'repoList']);
+      isEditing = false;
+      await openDetail(currentItem); // 重新渲染
+      scheduleRender(['cards', 'repoList']);
 
-    showToast('保存成功', 'success');
+      loadingToast.close();
+      showToast('保存成功', 'success');
+    } catch (error) {
+      loadingToast.close();
+      console.error('保存失败:', error);
+      showToast(error.message || '保存失败', 'error');
+      throw error; // 重新抛出以便外层catch处理
+    }
   } catch (error) {
+    // 外层catch处理未预期的错误
     console.error('保存失败:', error);
-    showToast(error.message || '保存失败', 'error');
+    if (!error.message || !error.message.includes('保存失败')) {
+      showToast(error.message || '保存失败', 'error');
+    }
   }
 }
 
@@ -1550,7 +1696,7 @@ async function handleGenerateSummary() {
     return;
   }
 
-  showToast('正在生成摘要...', 'loading');
+  const loadingToast = showLoadingToast('正在生成摘要...');
   try {
     const res = await aiAPI.generateSummary(currentItem.raw_content, currentItem.id);
     const summary = res.data.summary;
@@ -1564,6 +1710,7 @@ async function handleGenerateSummary() {
     // 重新加载数据确保同步
     await refreshItemAfterSummary(currentItem.id);
 
+    loadingToast.close();
     showToast('摘要已生成', 'success');
     
     // 自动建议标签
@@ -1573,6 +1720,7 @@ async function handleGenerateSummary() {
       }, 500); // 延迟500ms，让用户看到摘要生成成功的提示
     }
   } catch (error) {
+    loadingToast.close();
     console.error('生成摘要失败:', error);
     showToast(error.message || '生成摘要失败', 'error');
   }
@@ -1583,17 +1731,25 @@ async function showTagSuggestions(itemId, content) {
   if (!apiConfigured) return;
   
   try {
-    showToast('正在生成标签建议...', 'loading');
-    const res = await aiAPI.suggestTags(content);
-    const suggestedTags = res.data.tags || [];
-    
-    if (suggestedTags.length === 0) {
-      showToast('未生成标签建议', 'info');
-      return;
+    const loadingToast = showLoadingToast('正在生成标签建议...');
+    try {
+      const res = await aiAPI.suggestTags(content);
+      const suggestedTags = res.data.tags || [];
+      
+      loadingToast.close();
+      
+      if (suggestedTags.length === 0) {
+        showToast('未生成标签建议', 'info');
+        return;
+      }
+      
+      // 显示标签选择界面
+      showTagSelectionModal(itemId, suggestedTags);
+    } catch (error) {
+      loadingToast.close();
+      console.error('获取标签建议失败:', error);
+      showToast(error.message || '获取标签建议失败', 'error');
     }
-    
-    // 显示标签选择界面
-    showTagSelectionModal(itemId, suggestedTags);
   } catch (error) {
     console.error('获取标签建议失败:', error);
     showToast(error.message || '获取标签建议失败', 'error');
@@ -1750,49 +1906,57 @@ async function handleBatchSummary() {
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> 生成中...';
 
-  showToast(`正在为 ${itemsToSummarize.length} 条内容生成摘要...`, 'loading');
+  const loadingToast = showLoadingToast(`正在为 ${itemsToSummarize.length} 条内容生成摘要...`);
 
   let successCount = 0;
   let failCount = 0;
 
-  for (let i = 0; i < itemsToSummarize.length; i++) {
-    const item = itemsToSummarize[i];
-    try {
-      const res = await aiAPI.generateSummary(item.raw_content, item.id);
-      const summary = res.data.summary;
+  try {
+    for (let i = 0; i < itemsToSummarize.length; i++) {
+      const item = itemsToSummarize[i];
+      try {
+        const res = await aiAPI.generateSummary(item.raw_content, item.id);
+        const summary = res.data.summary;
 
-      // 更新 allItems
-      allItems = allItems.map((it) =>
-        it.id === item.id ? { ...it, summary_ai: summary } : it
-      );
+        // 更新 allItems
+        allItems = allItems.map((it) =>
+          it.id === item.id ? { ...it, summary_ai: summary } : it
+        );
 
-      successCount++;
+        successCount++;
 
-      // 每5个更新一次UI
-      if ((i + 1) % 5 === 0 || i === itemsToSummarize.length - 1) {
-        scheduleRender(['cards', 'repoList']);
+        // 每5个更新一次UI
+        if ((i + 1) % 5 === 0 || i === itemsToSummarize.length - 1) {
+          scheduleRender(['cards', 'repoList']);
+        }
+      } catch (error) {
+        console.error(`为 ${item.title} 生成摘要失败:`, error);
+        failCount++;
       }
-    } catch (error) {
-      console.error(`为 ${item.title} 生成摘要失败:`, error);
-      failCount++;
+
+      // 避免请求过快
+      if (i < itemsToSummarize.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
     }
 
-    // 避免请求过快
-    if (i < itemsToSummarize.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    // 重新加载数据确保同步
+    await loadItems();
+
+    loadingToast.close();
+    
+    if (failCount === 0) {
+      showToast(`成功为 ${successCount} 条内容生成摘要`, 'success');
+    } else {
+      showToast(`完成：成功 ${successCount} 条，失败 ${failCount} 条`, failCount > successCount ? 'error' : 'info');
     }
-  }
-
-  btn.disabled = false;
-  btn.innerHTML = originalText;
-
-  // 重新加载数据确保同步
-  await loadItems();
-
-  if (failCount === 0) {
-    showToast(`成功为 ${successCount} 条内容生成摘要`, 'success');
-  } else {
-    showToast(`完成：成功 ${successCount} 条，失败 ${failCount} 条`, failCount > successCount ? 'error' : 'info');
+  } catch (error) {
+    loadingToast.close();
+    console.error('批量生成摘要失败:', error);
+    showToast(error.message || '批量生成摘要失败', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
   }
 }
 
@@ -1817,64 +1981,7 @@ async function refreshItemAfterSummary(itemId) {
   }
 }
 
-// 快速导入
-async function handleQuickInputKeydown(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const value = elQuickInput.value.trim();
-    if (!value) return;
-
-    if (isURL(value)) {
-      showToast('正在解析链接...', 'loading');
-      try {
-        const res = await parseAPI.parseURL(value);
-        const data = res.data;
-        const now = Date.now();
-
-        const item = await itemsAPI.create({
-          // 统一为文本类型
-          type: 'text',
-          title: data.title || '未命名链接',
-          raw_content: data.content || '',
-          original_url: data.url,
-          source: 'Web',
-          tags: []
-        });
-
-        allItems.unshift(item.data);
-        // 重新加载确保数据同步
-        await loadItems();
-        elQuickInput.value = '';
-        showToast('链接已解析并保存', 'success');
-      } catch (error) {
-        console.error('解析失败:', error);
-        showToast(error.message || '解析URL失败', 'error');
-      }
-    } else {
-      // 作为 memo
-      const now = Date.now();
-      try {
-        const item = await itemsAPI.create({
-          // 统一为文本类型
-          type: 'text',
-          title: value.length > 32 ? value.slice(0, 32) + '...' : value,
-          raw_content: value,
-          original_url: '',
-          source: 'Memo',
-          tags: []
-        });
-        allItems.unshift(item.data);
-        // 重新加载确保数据同步
-        await loadItems();
-        elQuickInput.value = '';
-        showToast('已保存为 Memo', 'success');
-      } catch (error) {
-        console.error('保存Memo失败:', error);
-        showToast(error.message || '保存失败', 'error');
-      }
-    }
-  }
-}
+// 已删除：快速导入功能（handleQuickInputKeydown）
 
 // 加载 items（默认排除archived）
 // 使用分页加载以提高性能
@@ -2316,22 +2423,7 @@ function bindEvents() {
     });
   }
 
-  // 快速输入
-  if (elQuickInput) {
-    elQuickInput.addEventListener('keydown', handleQuickInputKeydown);
-  }
-
-  // 全局搜索（使用防抖优化）
-  if (elGlobalSearch) {
-    const debouncedSearch = debounce((value) => {
-      globalSearchTerm = value.trim();
-      renderCards();
-      renderRepoList();
-    }, 300);
-    elGlobalSearch.addEventListener('input', (e) => {
-      debouncedSearch(e.target.value);
-    });
-  }
+  // 已删除：快速输入和全局搜索事件监听器
   
   // 卡片点击事件委托（性能优化：单个监听器代替N个）
   if (elCardGrid) {
@@ -2357,22 +2449,56 @@ function bindEvents() {
       
       if (!item) return;
       
-      if (action === 'view') {
+      if (action === 'extract') {
+        // 提取知识
+        try {
+          // 获取当前知识库ID
+          const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
+          const currentKbId = getCurrentKnowledgeBaseId();
+          
+          // 导入提取模块
+          const { extractFromDocument } = await import('./knowledge-extraction.js');
+          const { showToast } = await import('./toast.js');
+          
+          // 不再显示toast，进度信息由底部进度条显示
+          
+          // 开始提取
+          await extractFromDocument(id, currentKbId, (progress) => {
+            if (progress.status === 'completed') {
+              // 自动跳转到知识库视图
+              setTimeout(() => {
+                switchView('knowledge-items');
+              }, 1000);
+            }
+            // 进度信息由进度条显示，不再使用toast
+          });
+        } catch (error) {
+          console.error('提取知识失败:', error);
+          // 错误信息由进度条显示，不再使用toast
+        }
+      } else if (action === 'view') {
         await openDetail(item);
       } else if (action === 'archive') {
         if (!confirm(`确定要归档 "${item.title}" 吗？归档后可在归档页面恢复。`)) {
           return;
         }
         try {
-          showToast('正在归档...', 'loading');
-          await itemsAPI.archive(id);
-          allItems = allItems.filter((it) => it.id !== id);
-          scheduleRender(['cards', 'repoList', 'tagsCloud']);
-          if (stats) {
-            stats.total = (stats.total || 0) - 1;
-            updateDashboardStats();
+          const loadingToast = showLoadingToast('正在归档...');
+          try {
+            await itemsAPI.archive(id);
+            allItems = allItems.filter((it) => it.id !== id);
+            scheduleRender(['cards', 'repoList', 'tagsCloud']);
+            if (stats) {
+              stats.total = (stats.total || 0) - 1;
+              updateDashboardStats();
+            }
+            loadingToast.close();
+            showToast('归档成功', 'success');
+          } catch (error) {
+            loadingToast.close();
+            console.error('归档失败:', error);
+            showToast(error.message || '归档失败', 'error');
           }
-          showToast('归档成功', 'success');
         } catch (error) {
           console.error('归档失败:', error);
           showToast(error.message || '归档失败', 'error');
@@ -2382,15 +2508,22 @@ function bindEvents() {
           return;
         }
         try {
-          showToast('正在删除...', 'loading');
-          await itemsAPI.delete(id);
-          allItems = allItems.filter((it) => it.id !== id);
-          scheduleRender(['cards', 'repoList', 'tagsCloud']);
-          if (stats) {
-            stats.total = (stats.total || 0) - 1;
-            updateDashboardStats();
+          const loadingToast = showLoadingToast('正在删除...');
+          try {
+            await itemsAPI.delete(id);
+            allItems = allItems.filter((it) => it.id !== id);
+            scheduleRender(['cards', 'repoList', 'tagsCloud']);
+            if (stats) {
+              stats.total = (stats.total || 0) - 1;
+              updateDashboardStats();
+            }
+            loadingToast.close();
+            showToast('删除成功', 'success');
+          } catch (error) {
+            loadingToast.close();
+            console.error('删除失败:', error);
+            showToast(error.message || '删除失败', 'error');
           }
-          showToast('删除成功', 'success');
         } catch (error) {
           console.error('删除失败:', error);
           showToast(error.message || '删除失败', 'error');
@@ -2416,17 +2549,24 @@ function bindEvents() {
         await openDetail(item);
       } else if (action === 'restore') {
         try {
-          showToast('正在恢复...', 'loading');
-          await itemsAPI.restore(id);
-          archivedItems = archivedItems.filter((it) => it.id !== id);
-          await loadItems();
-          renderArchiveList();
-          if (stats) {
-            stats.total = (stats.total || 0) + 1;
-            stats.archived = (stats.archived || 0) - 1;
-            updateDashboardStats();
+          const loadingToast = showLoadingToast('正在恢复...');
+          try {
+            await itemsAPI.restore(id);
+            archivedItems = archivedItems.filter((it) => it.id !== id);
+            await loadItems();
+            renderArchiveList();
+            if (stats) {
+              stats.total = (stats.total || 0) + 1;
+              stats.archived = (stats.archived || 0) - 1;
+              updateDashboardStats();
+            }
+            loadingToast.close();
+            showToast('恢复成功', 'success');
+          } catch (error) {
+            loadingToast.close();
+            console.error('恢复失败:', error);
+            showToast(error.message || '恢复失败', 'error');
           }
-          showToast('恢复成功', 'success');
         } catch (error) {
           console.error('恢复失败:', error);
           showToast(error.message || '恢复失败', 'error');
@@ -2436,15 +2576,22 @@ function bindEvents() {
           return;
         }
         try {
-          showToast('正在永久删除...', 'loading');
-          await itemsAPI.permanentDelete(id);
-          archivedItems = archivedItems.filter((it) => it.id !== id);
-          renderArchiveList();
-          if (stats) {
-            stats.archived = (stats.archived || 0) - 1;
-            updateDashboardStats();
+          const loadingToast = showLoadingToast('正在永久删除...');
+          try {
+            await itemsAPI.permanentDelete(id);
+            archivedItems = archivedItems.filter((it) => it.id !== id);
+            renderArchiveList();
+            if (stats) {
+              stats.archived = (stats.archived || 0) - 1;
+              updateDashboardStats();
+            }
+            loadingToast.close();
+            showToast('永久删除成功', 'success');
+          } catch (error) {
+            loadingToast.close();
+            console.error('永久删除失败:', error);
+            showToast(error.message || '永久删除失败', 'error');
           }
-          showToast('永久删除成功', 'success');
         } catch (error) {
           console.error('永久删除失败:', error);
           showToast(error.message || '永久删除失败', 'error');
@@ -2760,7 +2907,7 @@ async function initPDFViewer(itemId, filePath) {
     // 获取PDF文件URL
     const pdfUrl = `/api/files/pdf/${itemId}`;
     
-    showToast('正在加载PDF...', 'loading');
+    // 不显示loading toast，因为文档基本信息已经显示
     
     // 加载PDF文档
     const loadingTask = pdfjsLib.getDocument({
@@ -2768,11 +2915,15 @@ async function initPDFViewer(itemId, filePath) {
       withCredentials: false
     });
     
-    pdfViewerState.pdfDoc = await loadingTask.promise;
+    const loadedDoc = await loadingTask.promise;
+    if (!loadedDoc) {
+      throw new Error('PDF文档为空或加载失败');
+    }
+    pdfViewerState.pdfDoc = loadedDoc;
     pdfViewerState.totalPages = pdfViewerState.pdfDoc.numPages;
     pdfViewerState.currentPage = 1;
     
-    showToast('PDF加载成功', 'success');
+    // 不显示成功toast，因为文档已经显示出来了
     
     // 渲染第一页
     await renderPDFPage(pdfViewerState.currentPage);

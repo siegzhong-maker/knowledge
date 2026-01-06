@@ -4,6 +4,7 @@ import { itemsAPI } from './api.js';
 import { settingsAPI } from './api.js';
 import { getCurrentContext, formatContextLabel, getValidContext } from './context.js';
 import { renderPDFContent, highlightPage, scrollToQuote, getPDFContent, highlightTextInPDF } from './pdf.js';
+import { showToast } from './toast.js';
 
 // 左侧边栏宽度调整功能
 let isResizingLeftSidebar = false;
@@ -291,11 +292,7 @@ export async function initConsultation() {
           
           // 显示提示
           const status = newValue === 'true' ? '已启用' : '已禁用';
-          const toast = document.createElement('div');
-          toast.className = 'fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm';
-          toast.textContent = `相关性评估${status}`;
-          document.body.appendChild(toast);
-          setTimeout(() => toast.remove(), 2000);
+          showToast(`相关性评估${status}`, 'info');
         });
       });
     }
@@ -2456,7 +2453,7 @@ async function checkApiConfigured() {
   }
 }
 
-// 打开设置对话框（咨询工作台专用）
+// 打开设置对话框（智能问答专用）
 async function openSettingsModalFromConsultation() {
   try {
     // 尝试触发设置按钮的点击事件（这是最推荐的方式，因为会触发loadSettings）
@@ -2625,11 +2622,7 @@ export async function regenerateMessage(messageId) {
     if (!userMessageEl) {
       console.error('找不到对应的用户消息，消息索引:', messageIndex, '总消息数:', allMessages.length);
       console.error('尝试查找的消息ID:', messageId);
-      if (window.showToast) {
-        window.showToast('无法找到对应的用户消息，请刷新页面后重试', 'error');
-      } else {
-        alert('无法找到对应的用户消息，请刷新页面后重试');
-      }
+      showToast('无法找到对应的用户消息，请刷新页面后重试', 'error');
       return;
     }
     
@@ -2637,11 +2630,7 @@ export async function regenerateMessage(messageId) {
     const userMessageContent = userMessageEl.querySelector('.msg-user')?.textContent?.trim();
     if (!userMessageContent) {
       console.error('无法获取用户消息内容，DOM结构:', userMessageEl.innerHTML.substring(0, 200));
-      if (window.showToast) {
-        window.showToast('无法获取用户消息内容，请刷新页面后重试', 'error');
-      } else {
-        alert('无法获取用户消息内容，请刷新页面后重试');
-      }
+      showToast('无法获取用户消息内容，请刷新页面后重试', 'error');
       return;
     }
     
@@ -5122,11 +5111,7 @@ async function showModuleSelectorForDoc(docId) {
             })()
           : '未分类';
         
-        if (window.showToast) {
-          window.showToast(`文档已移动到${moduleName}`, 'success');
-        } else {
-          alert(`文档已移动到${moduleName}`);
-        }
+        showToast(`文档已移动到${moduleName}`, 'success');
       } catch (error) {
         console.error('更新文档模块失败:', error);
         alert('更新失败: ' + (error.message || '未知错误'));
