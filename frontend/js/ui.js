@@ -1338,13 +1338,21 @@ async function openDetail(item) {
       btnExtract.addEventListener('click', async () => {
         try {
           const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
-          const { extractFromDocument } = await import('./knowledge-extraction.js');
           const { showToast } = await import('./toast.js');
+          const extractionModule = window.knowledgeExtraction;
+          
+          if (!extractionModule || typeof extractionModule.extractFromDocument !== 'function') {
+            console.error('提取模块未初始化或加载失败', extractionModule);
+            if (showToast) {
+              showToast('提取模块加载失败，请刷新页面后重试', 'error');
+            }
+            return;
+          }
           
           const currentKbId = getCurrentKnowledgeBaseId();
           // 不再显示toast，进度信息由底部进度条显示
           
-          await extractFromDocument(item.id, currentKbId, async (progress) => {
+          await extractionModule.extractFromDocument(item.id, currentKbId, async (progress) => {
             if (progress.status === 'completed') {
               // 清除缓存并刷新文档列表以显示更新后的提取状态
               clearAPICache();
@@ -1466,13 +1474,21 @@ async function openDetail(item) {
       btnExtract.addEventListener('click', async () => {
         try {
           const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
-          const { extractFromDocument } = await import('./knowledge-extraction.js');
           const { showToast } = await import('./toast.js');
+          const extractionModule = window.knowledgeExtraction;
+          
+          if (!extractionModule || typeof extractionModule.extractFromDocument !== 'function') {
+            console.error('提取模块未初始化或加载失败', extractionModule);
+            if (showToast) {
+              showToast('提取模块加载失败，请刷新页面后重试', 'error');
+            }
+            return;
+          }
           
           const currentKbId = getCurrentKnowledgeBaseId();
           // 不再显示toast，进度信息由底部进度条显示
           
-          await extractFromDocument(item.id, currentKbId, async (progress) => {
+          await extractionModule.extractFromDocument(item.id, currentKbId, async (progress) => {
             if (progress.status === 'completed') {
               // 清除缓存并刷新文档列表以显示更新后的提取状态
               clearAPICache();
@@ -2200,6 +2216,53 @@ async function loadItemsFull() {
   }
 }
 
+// 文档库上传处理：在当前视图上传PDF并刷新列表
+async function handleRepoUpload() {
+  const btnRepoUpload = document.getElementById('btn-repo-upload');
+  const originalHtml = btnRepoUpload ? btnRepoUpload.innerHTML : '';
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      if (btnRepoUpload) {
+        btnRepoUpload.disabled = true;
+        btnRepoUpload.innerHTML = '上传中...';
+      }
+
+      // 复用现有 PDF 上传逻辑
+      const { uploadPDF } = await import('./pdf.js');
+      const result = await uploadPDF(file, null);
+
+      // 上传成功后清除缓存并刷新文档库列表
+      try {
+        clearAPICache();
+      } catch (err) {
+        console.warn('清除API缓存失败（文档库上传后）:', err);
+      }
+
+      await loadItems(true);
+
+      // 友好提示
+      alert('PDF 上传成功！文档已加入当前知识库，可在智能问答中用于提问。');
+    } catch (error) {
+      console.error('文档库上传失败:', error);
+      alert('上传失败: ' + (error.message || '请稍后重试'));
+    } finally {
+      if (btnRepoUpload) {
+        btnRepoUpload.disabled = false;
+        btnRepoUpload.innerHTML = originalHtml;
+      }
+    }
+  };
+
+  input.click();
+}
+
 // 加载更多知识库项目
 async function loadMoreItems() {
   repoCurrentPage++;
@@ -2629,6 +2692,25 @@ function bindEvents() {
       btn.addEventListener('click', () => setFilter(btn.dataset.filter));
     });
   }
+
+  // 文档库上传按钮：复用咨询视图的上传逻辑
+  const btnRepoUpload = document.getElementById('btn-repo-upload');
+  if (btnRepoUpload) {
+    btnRepoUpload.addEventListener('click', () => {
+      handleRepoUpload();
+    });
+  }
+
+  // 监听 PDF 上传完成事件，刷新文档库数据
+  document.addEventListener('pdfUploaded', async (e) => {
+    try {
+      // 确保获取最新数据
+      clearAPICache();
+      await loadItems();
+    } catch (err) {
+      console.error('PDF 上传后刷新文档库失败:', err);
+    }
+  });
 
   // 已删除：快速输入和全局搜索事件监听器
   

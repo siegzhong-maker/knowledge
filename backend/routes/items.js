@@ -3,13 +3,8 @@ const router = express.Router();
 const db = require('../services/db');
 const { v4: uuidv4 } = require('uuid');
 
-// 调试：记录所有路由请求
-router.use((req, res, next) => {
-  if (req.method === 'DELETE' && req.path.includes('permanent')) {
-    console.log(`[路由调试] DELETE请求: ${req.method} ${req.path}, params:`, req.params);
-  }
-  next();
-});
+// （可选调试中间件）如需调试永久删除请求，可在本地开发环境中临时启用
+// 为避免生产环境日志噪音，这里默认关闭
 
 // 获取所有知识项
 router.get('/', async (req, res) => {

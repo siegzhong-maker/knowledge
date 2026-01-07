@@ -205,11 +205,24 @@ export async function initConsultation() {
       const { clearAPICache } = await import('./api.js');
       clearAPICache();
       
-      // 重新加载PDF列表
-      await loadPDFList();
+      // 显示知识库切换加载状态
+      const loadingIndicator = document.getElementById('kb-loading-indicator');
+      if (loadingIndicator) {
+        loadingIndicator.classList.remove('hidden');
+      }
       
-      // 重新加载并渲染对话历史
-      await renderConversationHistory();
+      try {
+        // 重新加载PDF列表
+        await loadPDFList();
+        
+        // 重新加载并渲染对话历史
+        await renderConversationHistory();
+      } finally {
+        // 隐藏加载状态
+        if (loadingIndicator) {
+          loadingIndicator.classList.add('hidden');
+        }
+      }
     });
     
     // 加载PDF列表
@@ -462,7 +475,21 @@ function setupUploadButton() {
           }, 500);
         }
         
-        alert('PDF上传成功！');
+        // 清除API缓存并通知其他视图刷新（例如文档库）
+        try {
+          const { clearAPICache } = await import('./api.js');
+          clearAPICache();
+        } catch (e) {
+          console.warn('清除API缓存失败（上传后）:', e);
+        }
+        try {
+          const eventDetail = { itemId: result && result.id ? result.id : null };
+          document.dispatchEvent(new CustomEvent('pdfUploaded', { detail: eventDetail }));
+        } catch (e) {
+          console.warn('派发 pdfUploaded 事件失败:', e);
+        }
+        
+        alert('PDF 上传成功！文档已加入当前知识库，可在「文档库」管理，在「智能问答」中用于提问。');
         
         newUploadBtn.disabled = false;
         newUploadBtn.innerHTML = originalHtml;
