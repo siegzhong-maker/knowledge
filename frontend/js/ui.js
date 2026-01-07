@@ -200,15 +200,24 @@ function switchView(view) {
   // 已删除：全局搜索框显示/隐藏逻辑
 
   if (view === 'consultation' && elViewConsultation) {
-    elViewConsultation.classList.remove('hidden');
-    // 初始化Lucide图标（性能优化：只在咨询视图容器内初始化）
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons(elViewConsultation);
+    // 先显示 loading overlay，避免视图显示时的闪烁
+    const overlay = document.getElementById('consultation-loading-overlay');
+    if (overlay) {
+      overlay.classList.remove('hidden');
     }
-    // 初始化咨询工作台
-    import('./consultation.js').then(({ initConsultation, loadHistory }) => {
-      initConsultation();
-      loadHistory();
+    
+    // 使用 requestAnimationFrame 确保 overlay 先显示，然后再显示视图
+    requestAnimationFrame(() => {
+      elViewConsultation.classList.remove('hidden');
+      // 初始化Lucide图标（性能优化：只在咨询视图容器内初始化）
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons(elViewConsultation);
+      }
+      // 初始化咨询工作台
+      import('./consultation.js').then(({ initConsultation, loadHistory }) => {
+        initConsultation();
+        loadHistory();
+      });
     });
     import('./context.js').then(({ loadContext, formatContextLabel }) => {
       loadContext().then(() => {

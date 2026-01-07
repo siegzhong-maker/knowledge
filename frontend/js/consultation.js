@@ -320,9 +320,15 @@ export async function initConsultation() {
   // 初始化左侧边栏宽度
   initLeftSidebarWidth();
   const overlay = document.getElementById('consultation-loading-overlay');
-  // 仅在首次进入智能问答视图时显示视图级 Loading
-  if (overlay && !consultationInitialized) {
-    overlay.classList.remove('hidden');
+  // 显示 loading overlay（如果还未显示）
+  // switchView 可能已经显示了 overlay，但如果不是首次初始化，需要确保显示
+  if (overlay) {
+    // 如果 overlay 当前是隐藏的，显示它（用于非首次初始化的情况）
+    if (overlay.classList.contains('hidden')) {
+      overlay.classList.remove('hidden');
+    }
+    // 确保 overlay 可见（如果之前被隐藏了）
+    overlay.style.opacity = '1';
   }
   try {
     // 先初始化知识库系统（在函数顶部声明一次，后续复用）
@@ -531,9 +537,15 @@ export async function initConsultation() {
       await renderConversationHistory();
     }, 100);
   } finally {
-    // 首次初始化完成后，隐藏视图级 Loading
-    if (overlay) {
-      overlay.classList.add('hidden');
+    // 数据加载完成后，隐藏视图级 Loading（带淡出动画）
+    if (overlay && !overlay.classList.contains('hidden')) {
+      overlay.style.transition = 'opacity 0.3s ease-out';
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.style.opacity = '';
+        overlay.style.transition = '';
+      }, 300);
     }
     consultationInitialized = true;
   }
@@ -962,17 +974,23 @@ export async function renderPDFList() {
     conversations: conversationsByDoc[doc.id] || []
   }));
   
+  // 先隐藏容器，避免渲染过程中的布局跳动
+  container.classList.add('opacity-0');
+  // 保存当前内容高度，用于保持布局稳定
+  const currentHeight = container.scrollHeight;
+  if (currentHeight > 0) {
+    container.style.minHeight = `${currentHeight}px`;
+  }
+  
+  // 创建 DocumentFragment 用于批量渲染
+  const fragment = document.createDocumentFragment();
+  
   // 分批渲染文档列表（每次 15 个，避免阻塞 UI）
   const BATCH_SIZE = 15;
   let currentIndex = 0;
   
-  // 先清空容器
-  container.innerHTML = '';
-  
   const renderBatch = () => {
     const batch = docsWithConversations.slice(currentIndex, currentIndex + BATCH_SIZE);
-    
-    const batchFragment = document.createDocumentFragment();
     
     batch.forEach(doc => {
       const title = escapeHtml(doc.title || '未命名文档');
@@ -1002,7 +1020,7 @@ export async function renderPDFList() {
       const loadingClass = isLoading ? 'opacity-50 cursor-wait' : '';
       const loadingIndicator = isLoading ? `
         <div class="absolute right-2 top-1/2 transform -translate-y-1/2" id="loading-indicator-${doc.id}">
-          <div class="animate-spin rounded-full h-3 w-3 border-2 border-indigo-200 border-t-indigo-600"></div>
+          <div class="animate-spin rounded-full w-4 h-4 border-2 border-indigo-500 border-t-transparent"></div>
         </div>
       ` : '';
       docElement.innerHTML = `
@@ -1037,16 +1055,22 @@ export async function renderPDFList() {
       ` : ''}
     `;
       
-      batchFragment.appendChild(docElement);
+      fragment.appendChild(docElement);
     });
     
-    container.appendChild(batchFragment);
     currentIndex += BATCH_SIZE;
     
     if (currentIndex < docsWithConversations.length) {
       requestAnimationFrame(renderBatch);
     } else {
-      // 所有文档渲染完成后，批量初始化图标和绑定事件
+      // 所有文档渲染完成后，一次性替换容器内容
+      container.innerHTML = '';
+      container.appendChild(fragment);
+      
+      // 移除最小高度限制
+      container.style.minHeight = '';
+      
+      // 批量初始化图标
       if (window.lucide) {
         lucide.createIcons(container);
       }
@@ -1086,6 +1110,11 @@ export async function renderPDFList() {
       });
       
       console.log(`已绑定 ${container.querySelectorAll('[data-doc-id]').length} 个文档的点击事件`);
+      
+      // 使用 requestAnimationFrame 确保 DOM 更新完成后再显示
+      requestAnimationFrame(() => {
+        container.classList.remove('opacity-0');
+      });
     }
   };
   
@@ -1116,7 +1145,7 @@ function setDocumentLoading(docId, isLoading) {
         loadingIndicator.className = 'absolute right-2 top-1/2 transform -translate-y-1/2';
         loadingIndicator.id = `loading-indicator-${docId}`;
         loadingIndicator.innerHTML = `
-          <div class="animate-spin rounded-full h-3 w-3 border-2 border-indigo-200 border-t-indigo-600"></div>
+          <div class="animate-spin rounded-full w-4 h-4 border-2 border-indigo-500 border-t-transparent"></div>
         `;
         docButton.style.position = 'relative';
         if (!docButton.querySelector(`#loading-indicator-${docId}`)) {
@@ -1417,7 +1446,7 @@ export async function loadDoc(docId, autoOpenPanel = false) {
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center py-20">
         <div class="relative">
-          <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600 mb-6"></div>
+          <div class="animate-spin rounded-full w-16 h-16 border-4 border-indigo-500 border-t-transparent mb-6"></div>
           <i data-lucide="file-text" size="24" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-indigo-600"></i>
         </div>
         <p class="text-sm font-medium text-slate-700 mb-2">正在加载PDF...</p>
@@ -2101,7 +2130,7 @@ export function addAiMessage(html, isStreaming = false, citations = []) {
   // 如果是流式响应，显示加载状态
   const contentHtml = isStreaming 
     ? (html === '正在思考...' 
-        ? '<div class="flex items-center gap-2 text-slate-400"><div class="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div><span>正在思考...</span></div>' 
+        ? '<div class="flex items-center gap-2 text-slate-400"><div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div><span>正在思考...</span></div>' 
         : parseMarkdown(html, true) + '<span class="cursor-blink">▋</span>')
     : parseMarkdown(html, true);
   
@@ -2833,7 +2862,7 @@ function updateAiMessage(element, content, citations = [], evaluation = null) {
       contentEl.innerHTML = html + '<span class="cursor-blink">▋</span>';
     } else {
       // 如果没有内容，保持加载状态
-      contentEl.innerHTML = '<div class="flex items-center gap-2 text-slate-400"><div class="w-4 h-4 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin"></div><span>正在思考...</span></div>';
+      contentEl.innerHTML = '<div class="flex items-center gap-2 text-slate-400"><div class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div><span>正在思考...</span></div>';
     }
     
     // 重新绑定引用点击
@@ -4853,7 +4882,7 @@ export async function sendMessage() {
   if (sendButton) {
     sendButton.disabled = true;
     sendButton.classList.add('sending');
-    sendButton.innerHTML = '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>';
+    sendButton.innerHTML = '<div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>';
   }
   input.disabled = true;
   

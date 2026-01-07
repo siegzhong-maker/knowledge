@@ -681,11 +681,11 @@
         <!-- 智能问答视图级 Loading 覆盖层 -->
         <div
           id="consultation-loading-overlay"
-          class="hidden absolute inset-0 bg-white/80 flex items-center justify-center z-30"
+          class="hidden absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-30 transition-opacity duration-300"
         >
           <div class="flex flex-col items-center text-sm text-slate-600">
-            <div class="w-6 h-6 mb-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-            <div>正在加载智能问答数据，请稍候...</div>
+            <div class="w-8 h-8 mb-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="font-medium">正在加载智能问答数据，请稍候...</div>
           </div>
         </div>
 
@@ -725,7 +725,7 @@
                 <span>参考文档</span>
               </div>
               <p class="px-2 text-[11px] text-slate-400 mb-2 leading-relaxed">点击文档可查看详细内容，助手会基于这些文档为您解答</p>
-              <div class="space-y-1" id="knowledge-base-list">
+              <div class="space-y-1 transition-opacity duration-300" id="knowledge-base-list">
                 <!-- PDF列表由JS动态渲染 -->
               </div>
               <!-- 知识库切换加载状态提示 -->
