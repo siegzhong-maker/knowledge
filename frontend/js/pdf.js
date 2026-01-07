@@ -150,7 +150,7 @@ export async function renderPDFContent(pdfData, container) {
     return;
   }
 
-  // 如果是PDF类型且有文件路径，使用PDF.js查看器
+  // 优先尝试按真正PDF文件渲染（与文档库保持一致）：只要有文档ID，就尝试走 /api/files/pdf/:id
   console.log('renderPDFContent - 检查PDF数据:', { 
     type: pdfData.type, 
     hasFilePath: !!pdfData.file_path, 
@@ -159,13 +159,15 @@ export async function renderPDFContent(pdfData, container) {
     file_path: pdfData.file_path
   });
   
-  if (pdfData.type === 'pdf' && pdfData.file_path) {
+  const pdfViewId = pdfData.pdf_view_id || pdfData.id;
+  
+  if (pdfViewId) {
     // 在try块外定义pdfUrl，以便在catch块中使用
     let pdfUrl = null;
     
     try {
-      // 构建PDF文件URL
-      const pdfId = pdfData.id;
+      // 构建PDF文件URL（优先使用 pdf_view_id，与文档库保持一致）
+      const pdfId = pdfViewId;
       if (!pdfId) {
         console.warn('PDF数据缺少id，无法构建文件URL，PDF数据:', pdfData);
         // 降级到文本显示
@@ -191,88 +193,6 @@ export async function renderPDFContent(pdfData, container) {
         lucide.createIcons(container);
       }
 
-      // 先测试PDF URL是否可访问（带重试机制，处理文件上传后立即加载的情况）
-      let retryCount = 0;
-      const maxRetries = 3;
-      const retryDelay = 2000; // 2秒
-      
-      while (retryCount <= maxRetries) {
-        try {
-          console.log(`测试PDF URL可访问性 (尝试 ${retryCount + 1}/${maxRetries + 1}):`, pdfUrl);
-          const testResponse = await fetch(pdfUrl, { method: 'HEAD' });
-          console.log('PDF URL测试响应:', testResponse.status, testResponse.statusText);
-          
-          if (!testResponse.ok) {
-            // 如果是404且还有重试次数，等待后重试
-            if (testResponse.status === 404 && retryCount < maxRetries) {
-              console.log(`文件未找到，等待 ${retryDelay}ms 后重试...`);
-              // 更新加载提示
-              container.innerHTML = `
-                <div class="flex flex-col items-center justify-center py-20">
-                  <div class="relative">
-                    <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600 mb-6"></div>
-                    <i data-lucide="file-text" size="24" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-indigo-600"></i>
-                  </div>
-                  <p class="text-sm font-medium text-slate-700 mb-2">正在加载PDF...</p>
-                  <p class="text-xs text-slate-400">文件处理中，请稍候 (${retryCount + 1}/${maxRetries + 1})</p>
-                </div>
-              `;
-              if (window.lucide) {
-                lucide.createIcons(container);
-              }
-              
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-              retryCount++;
-              continue;
-            }
-            
-            // 其他错误或重试次数用完，尝试获取详细错误信息
-            let errorDetails = null;
-            if (testResponse.status === 404) {
-              try {
-                const errorData = await testResponse.json();
-                if (errorData.details) {
-                  errorDetails = errorData.details;
-                }
-              } catch (e) {
-                // 忽略JSON解析错误
-              }
-              const error = new Error('PDF文件访问失败: 404 文件未找到');
-              error.status = 404;
-              error.details = errorDetails;
-              throw error;
-            } else if (testResponse.status === 403) {
-              throw new Error('PDF文件访问失败: 403 权限不足');
-            } else {
-              throw new Error(`PDF文件访问失败: ${testResponse.status} ${testResponse.statusText}`);
-            }
-          }
-          
-          // 成功，跳出循环
-          break;
-        } catch (fetchError) {
-          // 如果是网络错误且还有重试次数，重试
-          if (retryCount < maxRetries && (fetchError.message.includes('fetch failed') || fetchError.message.includes('Failed to fetch'))) {
-            console.log(`网络错误，等待 ${retryDelay}ms 后重试...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            retryCount++;
-            continue;
-          }
-          
-          // 其他错误或重试次数用完，抛出错误
-          console.error('PDF URL访问测试失败:', fetchError);
-          // 如果是404，提供更明确的错误信息
-          if (fetchError.message.includes('404')) {
-            console.error('PDF文件未找到，可能的原因：');
-            console.error('1. 文件路径不正确');
-            console.error('2. 文件已被删除');
-            console.error('3. 后端文件服务未正确配置');
-            console.error('4. 文件可能还在处理中，请稍后刷新页面');
-          }
-          throw fetchError;
-        }
-      }
-      
       // 导入PDF查看器
       const { initPDFViewer } = await import('./pdf-viewer.js');
       
@@ -298,11 +218,11 @@ export async function renderPDFContent(pdfData, container) {
     } catch (error) {
       console.error('PDF.js查看器加载失败:', error);
       console.error('错误堆栈:', error.stack);
-      console.error('错误详情:', {
+        console.error('错误详情:', {
         name: error.name,
         message: error.message,
         pdfUrl: pdfUrl || '未定义',
-        pdfId: pdfData.id,
+        pdfId: pdfId,
         file_path: pdfData.file_path,
         hasPdfJs: typeof pdfjsLib !== 'undefined',
         workerSrc: typeof pdfjsLib !== 'undefined' ? pdfjsLib.GlobalWorkerOptions?.workerSrc : 'N/A',

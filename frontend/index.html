@@ -676,8 +676,19 @@
       <!-- Consultation Workspace (咨询工作台) -->
       <section
         id="view-consultation"
-        class="view-section hidden h-full flex"
+        class="view-section hidden h-full flex relative"
       >
+        <!-- 智能问答视图级 Loading 覆盖层 -->
+        <div
+          id="consultation-loading-overlay"
+          class="hidden absolute inset-0 bg-white/80 flex items-center justify-center z-30"
+        >
+          <div class="flex flex-col items-center text-sm text-slate-600">
+            <div class="w-6 h-6 mb-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <div>正在加载智能问答数据，请稍候...</div>
+          </div>
+        </div>
+
         <!-- 左侧知识库侧栏 -->
         <aside id="left-sidebar" class="bg-white border-r border-slate-200 flex flex-col z-20 relative" style="width: 260px; min-width: 200px; max-width: 500px;">
           <!-- 可拖拽调整宽度的分隔条 -->
@@ -786,6 +797,18 @@
               </button>
             </div>
           </header>
+
+          <!-- 当前知识库提示 -->
+          <div
+            id="current-kb-indicator"
+            class="hidden px-6 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600"
+          ></div>
+
+          <!-- AI 系统状态条 -->
+          <div
+            id="system-status-bar"
+            class="hidden px-6 py-2 border-b text-xs"
+          ></div>
 
           <!-- 聊天区域状态提示 -->
           <div id="chat-status-indicator" class="hidden px-6 py-2 bg-slate-50 border-b border-slate-200">

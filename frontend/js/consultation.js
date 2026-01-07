@@ -111,6 +111,132 @@ const state = {
   currentBranchId: null // 当前显示的分支ID
 };
 
+// 标记智能问答是否已完成首次初始化（用于控制视图级 Loading）
+let consultationInitialized = false;
+
+// AI 系统状态条动作缓存
+let systemStatusActions = [];
+
+// 更新当前知识库指示器
+export function updateCurrentKBIndicator(knowledgeBase, options = {}) {
+  const indicator = document.getElementById('current-kb-indicator');
+  if (!indicator) return;
+
+  const { isSwitching = false, docCount } = options;
+  const hasKb = !!(knowledgeBase && knowledgeBase.id);
+  const safeName = knowledgeBase?.name || '未命名知识库';
+  const count = typeof docCount === 'number' ? docCount : state.pdfList.length;
+
+  let text = '';
+  if (hasKb && count > 0) {
+    text = `当前知识库：${safeName} · 文档 ${count} 篇`;
+  } else {
+    text = '当前知识库暂无文档，建议先上传文档';
+  }
+
+  const switchingText = isSwitching ? '<span class="ml-2 text-[11px] text-slate-400">正在切换...</span>' : '';
+
+  const needsUploadAction = !hasKb || count === 0;
+  const uploadButtonHtml = needsUploadAction
+    ? '<button id="kb-indicator-upload-btn" class="ml-3 inline-flex items-center px-2.5 py-1 text-[11px] rounded-md border border-dashed border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-slate-50 transition-colors"><i data-lucide="upload" size="12" class="mr-1"></i>上传文档</button>'
+    : '';
+
+  indicator.innerHTML = `
+    <div class="max-w-3xl mx-auto flex items-center justify-between">
+      <div class="flex items-center text-xs text-slate-600">
+        <i data-lucide="book-open" size="14" class="mr-2 text-slate-400"></i>
+        <span>${escapeHtml(text)}${switchingText}</span>
+      </div>
+      ${uploadButtonHtml}
+    </div>
+  `;
+  indicator.classList.remove('hidden');
+
+  // 初始化图标
+  if (window.lucide) {
+    lucide.createIcons(indicator);
+  }
+
+  // 绑定“上传文档”按钮到统一上传入口
+  if (needsUploadAction) {
+    const uploadBtn = document.getElementById('kb-indicator-upload-btn');
+    if (uploadBtn) {
+      uploadBtn.onclick = () => {
+        const primaryUploadBtn =
+          document.getElementById('btn-upload-pdf') ||
+          document.getElementById('btn-repo-upload');
+        if (primaryUploadBtn) {
+          primaryUploadBtn.click();
+        }
+      };
+    }
+  }
+}
+
+// 设置 AI 系统状态条
+export function setSystemStatus(status) {
+  const bar = document.getElementById('system-status-bar');
+  if (!bar) return;
+
+  // 清空状态并隐藏
+  if (!status) {
+    bar.className = 'hidden px-6 py-2 border-b text-xs';
+    bar.innerHTML = '';
+    systemStatusActions = [];
+    return;
+  }
+
+  const { type = 'info', message = '', actions = [] } = status;
+  systemStatusActions = Array.isArray(actions) ? actions : [];
+
+  let typeClasses = '';
+  if (type === 'error') {
+    typeClasses = 'bg-rose-50 border-rose-200 text-rose-700';
+  } else if (type === 'warning') {
+    typeClasses = 'bg-amber-50 border-amber-200 text-amber-700';
+  } else {
+    typeClasses = 'bg-sky-50 border-sky-200 text-sky-700';
+  }
+
+  bar.className = `px-6 py-2 border-b text-xs flex items-center justify-between ${typeClasses}`;
+
+  const safeMessage = escapeHtml(message);
+  const actionsHtml = systemStatusActions
+    .map(
+      (action, index) =>
+        `<button data-action-index="${index}" class="ml-2 inline-flex items-center px-2 py-1 text-[11px] rounded-md border border-current/40 bg-white/20 hover:bg-white/40 transition-colors">${escapeHtml(
+          action.label || '操作'
+        )}</button>`
+    )
+    .join('');
+
+  bar.innerHTML = `
+    <div class="flex items-center text-[11px]">
+      <i data-lucide="${type === 'error' ? 'alert-triangle' : type === 'warning' ? 'alert-circle' : 'info'}" size="14" class="mr-2"></i>
+      <span>${safeMessage}</span>
+    </div>
+    <div class="flex items-center">${actionsHtml}</div>
+  `;
+
+  // 初始化图标
+  if (window.lucide) {
+    lucide.createIcons(bar);
+  }
+
+  // 绑定动作按钮
+  const buttons = bar.querySelectorAll('button[data-action-index]');
+  buttons.forEach((btn) => {
+    const index = parseInt(btn.getAttribute('data-action-index'), 10);
+    const action = systemStatusActions[index];
+    if (action && typeof action.onClick === 'function') {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        action.onClick();
+      });
+    }
+  });
+}
+
 // 加载PDF列表
 export async function loadPDFList() {
   try {
@@ -184,6 +310,11 @@ export async function loadPDFList() {
 export async function initConsultation() {
   // 初始化左侧边栏宽度
   initLeftSidebarWidth();
+  const overlay = document.getElementById('consultation-loading-overlay');
+  // 仅在首次进入智能问答视图时显示视图级 Loading
+  if (overlay && !consultationInitialized) {
+    overlay.classList.remove('hidden');
+  }
   try {
     // 先初始化知识库系统（在函数顶部声明一次，后续复用）
     const kbModule = await import('./knowledge-bases.js');
@@ -210,6 +341,12 @@ export async function initConsultation() {
       if (loadingIndicator) {
         loadingIndicator.classList.remove('hidden');
       }
+      // 当前知识库指示器显示“正在切换…”
+      try {
+        updateCurrentKBIndicator(knowledgeBase, { isSwitching: true });
+      } catch (err) {
+        console.warn('更新当前知识库指示器失败（切换中）:', err);
+      }
       
       try {
         // 重新加载PDF列表
@@ -222,11 +359,29 @@ export async function initConsultation() {
         if (loadingIndicator) {
           loadingIndicator.classList.add('hidden');
         }
+        // 切换完成后更新当前知识库指示器（包含最新文档数量）
+        try {
+          updateCurrentKBIndicator(knowledgeBase);
+        } catch (err) {
+          console.warn('更新当前知识库指示器失败（切换完成）:', err);
+        }
       }
     });
     
     // 加载PDF列表
     await loadPDFList();
+
+    // 初始化当前知识库指示信息
+    try {
+      if (kbModule.getCurrentKnowledgeBase) {
+        const currentKb = kbModule.getCurrentKnowledgeBase();
+        updateCurrentKBIndicator(currentKb);
+      } else {
+        updateCurrentKBIndicator(null);
+      }
+    } catch (err) {
+      console.warn('初始化当前知识库指示器失败:', err);
+    }
     
     // 初始化对话区域（默认显示，不显示欢迎界面）
     initChatArea();
@@ -366,6 +521,12 @@ export async function initConsultation() {
     setTimeout(async () => {
       await renderConversationHistory();
     }, 100);
+  } finally {
+    // 首次初始化完成后，隐藏视图级 Loading
+    if (overlay) {
+      overlay.classList.add('hidden');
+    }
+    consultationInitialized = true;
   }
 }
 
@@ -1192,8 +1353,26 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       ? Promise.resolve(state.docMetadata[docId])
       : Promise.resolve(null);
     
-    const [pdfData, cachedMetadata] = await Promise.all([pdfPromise, metadataPromise]);
-    console.log('PDF数据获取成功:', pdfData);
+    const [pdfDataRaw, cachedMetadata] = await Promise.all([pdfPromise, metadataPromise]);
+    console.log('PDF数据获取成功:', pdfDataRaw);
+    
+    // 合并列表中的元信息，尽量保留 type / file_path 等用于还原原始PDF的字段
+    let pdfData = pdfDataRaw;
+    let pdfViewId = docId;
+    if (pdfDataRaw) {
+      const listDoc = state.pdfList.find(d => d.id === docId);
+      if (listDoc) {
+        pdfViewId = listDoc.id || docId;
+        pdfData = {
+          ...pdfDataRaw,
+          // 优先使用已有字段，否则补充列表里的字段
+          type: pdfDataRaw.type || listDoc.type,
+          file_path: pdfDataRaw.file_path || listDoc.file_path,
+          title: pdfDataRaw.title || listDoc.title,
+          page_count: pdfDataRaw.page_count || listDoc.page_count
+        };
+      }
+    }
     
     if (!pdfData) {
       console.error('PDF数据为空');
@@ -1202,6 +1381,14 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       }
       alert('加载PDF内容失败：数据为空');
       return;
+    }
+    
+    // 将用于 PDF 预览的 ID 一并存入当前文档信息中，供 pdf.js 使用
+    if (pdfData && pdfViewId) {
+      pdfData = {
+        ...pdfData,
+        pdf_view_id: pdfViewId
+      };
     }
     
     state.currentDocId = docId;
@@ -1658,6 +1845,13 @@ export async function handleConversation(text) {
       },
       enableEvaluation
     );
+
+    // 调用成功后清理可能存在的错误状态条
+    try {
+      setSystemStatus(null);
+    } catch (e) {
+      console.warn('清理系统状态条失败:', e);
+    }
     
     // 流式完成，移除光标，添加操作按钮
     if (responseEl) {
@@ -2566,23 +2760,105 @@ function bindCitationClicks(element) {
   });
 }
 
-// 处理引用卡片点击
-export function handleCitationClick(citationIndex, page, text, docId) {
+// 尝试将任意docId解析为实际的PDF文档ID（与文档库一致）
+async function resolvePdfDocId(docId, citation) {
+  if (!docId) return null;
+  
+  // 1. 先在当前已加载的PDF列表中查找（文档库使用的就是这些ID）
+  const fromList = state.pdfList?.find(d => d.id === docId);
+  if (fromList && fromList.type === 'pdf') {
+    return fromList.id;
+  }
+  
+  try {
+    // 2. 调用itemsAPI获取该ID对应的记录，判断是否本身就是PDF
+    const item = await itemsAPI.getById(docId);
+    if (item && item.type === 'pdf') {
+      return item.id;
+    }
+    
+    // 3. 如果是知识项之类的记录，看看是否有指向原始PDF的字段
+    if (item && item.source_item_id) {
+      const sourceFromList = state.pdfList?.find(d => d.id === item.source_item_id);
+      if (sourceFromList && sourceFromList.type === 'pdf') {
+        return sourceFromList.id;
+      }
+      return item.source_item_id;
+    }
+    
+    // 4. 最后兜底：根据标题在PDF列表中匹配（用于“智能纪要”这类场景）
+    const title = (citation && (citation.docTitle || citation.docName)) || item?.title;
+    if (title && Array.isArray(state.pdfList) && state.pdfList.length > 0) {
+      const matchedByTitle = state.pdfList.find(d => d.title === title && d.type === 'pdf');
+      if (matchedByTitle) {
+        return matchedByTitle.id;
+      }
+    }
+  } catch (e) {
+    console.warn('resolvePdfDocId失败:', e);
+  }
+  
+  // 找不到更好的映射时，返回原始ID（保持兼容当前行为）
+  return docId;
+}
+
+// 处理引用卡片点击（优先走与文档库一致的PDF预览）
+export async function handleCitationClick(citationIndex, page, text, docId) {
   // 标记为已查看
   const citationCard = document.querySelector(`[data-citation-id="${citationIndex}"]`);
   if (citationCard) {
     citationCard.classList.add('viewed');
   }
   
-  // 跳转到PDF（点击引用时自动打开面板）
-  if (docId && docId !== state.currentDocId) {
-    loadDoc(docId, true).then(() => {
-      setTimeout(() => {
-        locateQuote(page, text, docId);
-      }, 300);
-    });
-  } else {
-    // 如果文档已加载，直接定位并打开面板
+  // 优先使用传入的docId，其次使用当前文档ID
+  const originalDocId = docId || state.currentDocId || null;
+  
+  // 如果完全没有可用的文档ID，只做定位/高亮（维持原有降级体验）
+  if (!originalDocId) {
+    if (page) {
+      locateQuote(page, text);
+    } else if (text) {
+      const container = document.getElementById('pdf-content');
+      if (container) {
+        highlightTextInPDF(container, text);
+      }
+    }
+    return;
+  }
+  
+  try {
+    // 将任意docId尽量解析为真实PDF文档ID（与文档库同源）
+    const citationsArea = document.querySelector(`[data-citation-id="${citationIndex}"]`)?.closest('.citations-area');
+    const messageId = citationsArea?.getAttribute('data-message-id');
+    let citationData = null;
+    
+    // 尝试从当前消息中找到对应的citation数据（用于标题匹配）
+    if (messageId) {
+      const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageEl && messageEl.__citations && Array.isArray(messageEl.__citations)) {
+        citationData = messageEl.__citations[citationIndex] || null;
+      }
+    }
+    
+    const resolvedDocId = await resolvePdfDocId(originalDocId, citationData);
+    
+    // 如果解析后的ID就是当前已打开的文档，只做滚动/高亮
+    if (resolvedDocId === state.currentDocId) {
+      if (page) {
+        locateQuote(page, text);
+      } else if (text) {
+        const container = document.getElementById('pdf-content');
+        if (container) {
+          highlightTextInPDF(container, text);
+        }
+      }
+      return;
+    }
+    
+    // 否则加载解析出的PDF文档，并在加载完成后对齐到引用位置
+    await loadDoc(resolvedDocId, true);
+    
+    // 确保右侧面板已展开（与原逻辑保持一致）
     const panel = document.getElementById('right-panel');
     if (panel) {
       const isOpen = panel.style.width === '40%' || panel.style.width === '45%' || panel.classList.contains('w-[45%]') || panel.offsetWidth > 100;
@@ -2594,7 +2870,19 @@ export function handleCitationClick(citationIndex, page, text, docId) {
         localStorage.removeItem('rightPanelClosed');
       }
     }
-    locateQuote(page, text, docId);
+    
+    setTimeout(() => {
+      if (page) {
+        locateQuote(page, text);
+      } else if (text) {
+        const container = document.getElementById('pdf-content');
+        if (container) {
+          highlightTextInPDF(container, text);
+        }
+      }
+    }, 300);
+  } catch (error) {
+    console.error('加载引用文档失败:', error);
   }
 }
 
@@ -4211,11 +4499,37 @@ export async function sendMessage() {
     const chatStream = document.getElementById('chat-stream');
     if (chatStream) {
       const lastMessage = chatStream.lastElementChild;
-      const isError = lastMessage && lastMessage.querySelector('.msg-ai') && 
+      const isError = lastMessage && lastMessage.querySelector('.msg-ai') &&
                      lastMessage.querySelector('.msg-ai').textContent.includes('错误');
       if (!isError) {
         addAiMessage(`❌ **发送失败**：${error.message || '网络错误，请稍后重试'}`);
       }
+    }
+
+    // 更新系统状态条，提示用户当前对话不可用
+    try {
+      setSystemStatus({
+        type: 'error',
+        message: error.message || '智能问答服务暂不可用，请检查网络或 API 配置后重试。',
+        actions: [
+          {
+            label: '前往设置',
+            onClick: () => {
+              const settingsBtn = document.getElementById('btn-open-settings');
+              if (settingsBtn) settingsBtn.click();
+            }
+          },
+          {
+            label: '重试发送',
+            onClick: () => {
+              // 重新触发发送（不自动填充原文，交由用户确认）
+              focusInput();
+            }
+          }
+        ]
+      });
+    } catch (e) {
+      console.warn('更新系统状态条失败:', e);
     }
   } finally {
     // 恢复输入状态
@@ -4915,6 +5229,8 @@ window.loadConversationFromHistory = loadConversationFromHistory;
 window.deleteConversation = deleteConversation;
 window.editConversationTitle = editConversationTitle;
 window.setPDFViewerInstance = setPDFViewerInstance;
+window.setSystemStatus = setSystemStatus;
+window.updateCurrentKBIndicator = updateCurrentKBIndicator;
 
 // 为文档显示模块选择器
 async function showModuleSelectorForDoc(docId) {

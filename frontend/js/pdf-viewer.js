@@ -545,12 +545,15 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
     }
 
     // 绑定事件 - 使用延迟确保 DOM 完全渲染
+    // 注意：部分按钮引用（如fitWidthBtn）在后续逻辑中也会使用，
+    // 因此需要在外层定义变量，避免块级作用域导致的 ReferenceError。
+    let fitWidthBtn = null;
     const bindButtonEvents = () => {
       const prevBtn = document.getElementById('pdf-prev-page');
       const nextBtn = document.getElementById('pdf-next-page');
       const zoomInBtn = document.getElementById('pdf-zoom-in');
       const zoomOutBtn = document.getElementById('pdf-zoom-out');
-      const fitWidthBtn = document.getElementById('pdf-fit-width');
+      fitWidthBtn = document.getElementById('pdf-fit-width');
 
       // 检查按钮是否存在
       if (!prevBtn || !nextBtn || !zoomInBtn || !zoomOutBtn) {
