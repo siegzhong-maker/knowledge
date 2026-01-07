@@ -311,7 +311,8 @@ async function ensureDatabaseInitialized() {
           updated_at BIGINT NOT NULL,
           status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processed', 'archived')),
           knowledge_base_id TEXT,
-          module_id TEXT
+          module_id TEXT,
+          knowledge_extracted BOOLEAN DEFAULT FALSE
         )
       `);
       console.log('✓ source_items表已创建');
@@ -450,7 +451,58 @@ async function ensureDatabaseInitialized() {
 
       console.log('✓ PostgreSQL数据库初始化完成');
     } else {
-      console.log('✓ 数据库表已存在，跳过初始化');
+      console.log('✓ 数据库表已存在，检查必要字段...');
+      
+      // 检查并添加 knowledge_extracted 字段（如果不存在）
+      try {
+        const columnCheck = await client.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'source_items'
+          AND column_name = 'knowledge_extracted'
+        `);
+        
+        if (columnCheck.rows.length === 0) {
+          console.log('检测到 knowledge_extracted 字段不存在，开始添加...');
+          await client.query(`
+            ALTER TABLE source_items 
+            ADD COLUMN knowledge_extracted BOOLEAN DEFAULT FALSE
+          `);
+          console.log('✓ knowledge_extracted 字段已添加');
+          
+          // 初始化现有数据：标记已有知识点的文档为已提取
+          try {
+            const updateResult = await client.query(`
+              UPDATE source_items
+              SET knowledge_extracted = TRUE
+              WHERE id IN (
+                SELECT DISTINCT source_item_id 
+                FROM personal_knowledge_items 
+                WHERE source_item_id IS NOT NULL
+              )
+              AND (knowledge_extracted IS NULL OR knowledge_extracted = FALSE)
+            `);
+            
+            if (updateResult.rowCount > 0) {
+              console.log(`✓ 已将 ${updateResult.rowCount} 个已有知识点的文档标记为已提取`);
+            }
+          } catch (err) {
+            // personal_knowledge_items 表可能不存在，忽略错误
+            if (!err.message.includes('does not exist') && !err.message.includes('relation')) {
+              console.warn('   初始化 knowledge_extracted 字段时出现警告:', err.message);
+            }
+          }
+          
+          // 创建索引
+          await client.query(`CREATE INDEX IF NOT EXISTS idx_source_items_knowledge_extracted ON source_items(knowledge_extracted)`);
+          console.log('✓ knowledge_extracted 字段索引已创建');
+        } else {
+          console.log('✓ knowledge_extracted 字段已存在');
+        }
+      } catch (err) {
+        console.warn('检查 knowledge_extracted 字段时出现警告:', err.message);
+      }
     }
   } catch (error) {
     console.error('数据库初始化失败:', error);
