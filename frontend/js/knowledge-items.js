@@ -20,6 +20,7 @@ const knowledgeState = {
   currentFilter: 'all',
   currentCategoryFilter: 'all', // 新增：分类筛选
   highlightIds: [], // 本次提取需要高亮的知识点ID列表
+  highlightFilterActive: false, // 是否只显示本次新提取的卡片
   searchQuery: '',
   selectedItemId: null,
   loading: false,
@@ -181,6 +182,11 @@ function getCategoryFromTags(tags) {
 function applyFilters() {
   let filtered = [...knowledgeState.items];
 
+  // 防御：如果开启了“只看这些卡片”但没有高亮ID，自动关闭过滤
+  if (knowledgeState.highlightFilterActive && (!knowledgeState.highlightIds || knowledgeState.highlightIds.length === 0)) {
+    knowledgeState.highlightFilterActive = false;
+  }
+
   // 状态筛选
   if (knowledgeState.currentFilter !== 'all') {
     filtered = filtered.filter(item => item.status === knowledgeState.currentFilter);
@@ -201,6 +207,42 @@ function applyFilters() {
       item.title.toLowerCase().includes(query) ||
       item.content.toLowerCase().includes(query)
     );
+  }
+
+  // 本次新提取筛选（K2）
+  if (knowledgeState.highlightFilterActive && knowledgeState.highlightIds.length > 0) {
+    const highlightSet = new Set(knowledgeState.highlightIds);
+    filtered = filtered.filter(item => highlightSet.has(item.id));
+
+    // 如果过滤后没有任何卡片，自动退出高亮过滤，恢复全部
+    if (filtered.length === 0) {
+      knowledgeState.highlightFilterActive = false;
+      // 重新应用筛选（此时 highlightFilterActive 已关闭，需要重新过滤）
+      // 重新从 items 开始过滤，但跳过 highlightFilterActive 检查
+      filtered = [...knowledgeState.items];
+      
+      // 状态筛选
+      if (knowledgeState.currentFilter !== 'all') {
+        filtered = filtered.filter(item => item.status === knowledgeState.currentFilter);
+      }
+      
+      // 分类筛选
+      if (knowledgeState.currentCategoryFilter !== 'all') {
+        filtered = filtered.filter(item => {
+          const category = item.category || getCategoryFromTags(item.tags || []);
+          return category === knowledgeState.currentCategoryFilter;
+        });
+      }
+      
+      // 搜索筛选
+      if (knowledgeState.searchQuery) {
+        const query = knowledgeState.searchQuery.toLowerCase();
+        filtered = filtered.filter(item => 
+          item.title.toLowerCase().includes(query) ||
+          item.content.toLowerCase().includes(query)
+        );
+      }
+    }
   }
 
   knowledgeState.filteredItems = filtered;
@@ -226,17 +268,18 @@ function createConfidenceBadge(score) {
  */
 function createStatusBadge(status) {
   const config = {
-    confirmed: { color: 'bg-blue-50 text-blue-600 border-blue-100', label: '已确认', icon: 'check-circle' },
-    pending: { color: 'bg-amber-50 text-amber-600 border-amber-100', label: '待审核', icon: 'alert-circle' },
-    archived: { color: 'bg-gray-100 text-gray-500 border-gray-200', label: '已归档', icon: 'archive' }
+    confirmed: { color: 'bg-blue-50 text-blue-600 border-blue-100', label: '已确认', icon: 'check-circle', showManual: true },
+    pending: { color: 'bg-amber-50 text-amber-600 border-amber-100', label: '待审核', icon: 'alert-circle', showManual: false },
+    archived: { color: 'bg-gray-100 text-gray-500 border-gray-200', label: '已归档', icon: 'archive', showManual: false }
   };
   
-  const { color, label, icon } = config[status] || config.confirmed;
+  const { color, label, icon, showManual } = config[status] || config.confirmed;
   
   return `
     <span class="px-2 py-0.5 rounded-md text-xs font-medium border flex items-center gap-1 ${color}">
       <i data-lucide="${icon}" size="10"></i>
       ${label}
+      ${showManual ? '<span class="ml-1 text-[10px] opacity-75">(人工确认)</span>' : ''}
     </span>
   `;
 }
@@ -395,6 +438,25 @@ export function renderKnowledgeView() {
   // 清空容器
   container.innerHTML = '';
 
+  // K1: 如果当前筛选是"待确认"，显示提示信息
+  if (knowledgeState.currentFilter === 'pending') {
+    const pendingNotice = document.createElement('div');
+    pendingNotice.className = 'mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3';
+    pendingNotice.innerHTML = `
+      <i data-lucide="alert-circle" size="20" class="text-amber-600 flex-shrink-0 mt-0.5"></i>
+      <div class="flex-1">
+        <p class="text-sm text-amber-800 font-medium">当前仅显示待人工确认的知识卡片</p>
+        <p class="text-xs text-amber-600 mt-1">这些卡片需要您检查并确认后才能用于智能问答</p>
+      </div>
+    `;
+    container.appendChild(pendingNotice);
+    
+    // 初始化图标
+    if (window.lucide) {
+      window.lucide.createIcons(pendingNotice);
+    }
+  }
+
   // 如果正在加载
   if (knowledgeState.loading && knowledgeState.items.length === 0) {
     // 使用骨架屏提供更好的加载体验
@@ -536,7 +598,22 @@ export function renderKnowledgeView() {
     let latestItems = [];
     let otherItems = [...knowledgeState.filteredItems];
 
-    if (highlightIds.length > 0) {
+    // 如果 highlightFilterActive 为 true，说明已经过滤过了，直接使用 filteredItems
+    if (knowledgeState.highlightFilterActive) {
+      // 当只显示本次新提取时，直接使用 filteredItems（已经过滤过了）
+      latestItems = [...knowledgeState.filteredItems];
+      // 按照highlightIds的顺序排序
+      if (highlightIds.length > 0) {
+        const orderMap = new Map(highlightIds.map((id, index) => [id, index]));
+        latestItems.sort((a, b) => {
+          const orderA = orderMap.get(a.id) ?? 0;
+          const orderB = orderMap.get(b.id) ?? 0;
+          return orderA - orderB;
+        });
+      }
+      otherItems = []; // 不显示其他项目
+    } else if (highlightIds.length > 0) {
+      // 正常模式：分离出本次新提取和其他项目
       const highlightSet = new Set(highlightIds);
       latestItems = knowledgeState.filteredItems.filter(item => highlightSet.has(item.id));
       otherItems = knowledgeState.filteredItems.filter(item => !highlightSet.has(item.id));
@@ -553,15 +630,15 @@ export function renderKnowledgeView() {
     // 使用 DocumentFragment 批量操作 DOM
     const fragment = document.createDocumentFragment();
 
-    // 顶部「本次新提取」区域
+    // 顶部「本次新提取」区域（当有 latestItems 时显示）
     if (latestItems.length > 0) {
       const latestSection = document.createElement('div');
       latestSection.className = 'mb-8';
 
-      // 带背景的标题区域
+      // 带背景的标题区域（K2: 增加"只看这些卡片"和"返回全部"按钮）
       latestSection.innerHTML = `
         <div class="bg-gradient-to-r from-emerald-50 via-green-50 to-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4 shadow-sm">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white shadow-md">
                 <i data-lucide="sparkles" size="16"></i>
@@ -578,6 +655,33 @@ export function renderKnowledgeView() {
               清除高亮
             </button>
           </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            ${!knowledgeState.highlightFilterActive ? `
+              <button
+                id="btn-filter-highlight-only"
+                class="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:border-emerald-400 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <i data-lucide="filter" size="14"></i>
+                <span>只看这些卡片</span>
+              </button>
+            ` : `
+              <button
+                id="btn-filter-highlight-only"
+                class="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 border border-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <i data-lucide="filter" size="14"></i>
+                <span>只看这些卡片</span>
+              </button>
+              <button
+                id="btn-filter-all"
+                class="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-white border border-emerald-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-300 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <i data-lucide="x" size="14"></i>
+                <span>返回全部</span>
+              </button>
+            `}
+          </div>
+          <p class="text-xs text-emerald-600 mt-2 opacity-75">点击"只看这些卡片"可仅查看本次新提取的知识点</p>
         </div>
       `;
 
@@ -611,21 +715,25 @@ export function renderKnowledgeView() {
       latestSection.appendChild(latestGrid);
       fragment.appendChild(latestSection);
 
-      // 添加分隔线
-      const divider = document.createElement('div');
-      divider.className = 'my-6 flex items-center gap-4';
-      divider.innerHTML = `
-        <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-        <span class="text-xs text-slate-400 font-medium">全部知识</span>
-        <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-      `;
-      fragment.appendChild(divider);
+      // 只有当 highlightFilterActive 为 false 时才显示分隔线和"全部知识"区域
+      if (!knowledgeState.highlightFilterActive) {
+        // 添加分隔线
+        const divider = document.createElement('div');
+        divider.className = 'my-6 flex items-center gap-4';
+        divider.innerHTML = `
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+          <span class="text-xs text-slate-400 font-medium">全部知识</span>
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+        `;
+        fragment.appendChild(divider);
+      }
 
       // 绑定清除高亮按钮（在添加到 DOM 之前）
       const clearBtn = latestSection.querySelector('#btn-clear-latest-highlight');
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
           knowledgeState.highlightIds = [];
+          knowledgeState.highlightFilterActive = false;
           try {
             if (typeof window !== 'undefined' && window.localStorage) {
               window.localStorage.removeItem('latestExtractionHighlightIds');
@@ -633,55 +741,98 @@ export function renderKnowledgeView() {
           } catch (e) {
             console.warn('清除本次提取高亮ID失败:', e);
           }
+          applyFilters();
+          renderKnowledgeView();
+        });
+      }
+
+      // K2: 绑定"只看这些卡片"按钮
+      const filterHighlightBtn = latestSection.querySelector('#btn-filter-highlight-only');
+      if (filterHighlightBtn) {
+        filterHighlightBtn.addEventListener('click', () => {
+          knowledgeState.highlightFilterActive = true;
+          applyFilters();
+          renderKnowledgeView();
+        });
+      }
+
+      // K2: 绑定"返回全部"按钮
+      const filterAllBtn = latestSection.querySelector('#btn-filter-all');
+      if (filterAllBtn) {
+        filterAllBtn.addEventListener('click', () => {
+          knowledgeState.highlightFilterActive = false;
+          applyFilters();
           renderKnowledgeView();
         });
       }
     }
 
-    // 下面是常规知识列表
-    const grid = document.createElement('div');
-    grid.className = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20';
-    fragment.appendChild(grid);
-    
-    // 一次性添加到 DOM（先添加容器，再分批填充内容）
-    container.appendChild(fragment);
+    // 下面是常规知识列表（只有当 highlightFilterActive 为 false 时才显示）
+    if (!knowledgeState.highlightFilterActive) {
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20';
+      fragment.appendChild(grid);
+      
+      // 一次性添加到 DOM（先添加容器，再分批填充内容）
+      container.appendChild(fragment);
 
-    // 分批渲染常规知识列表卡片（每次 10 个）
-    const allItemsToRender = otherItems.length > 0 ? otherItems : knowledgeState.filteredItems;
-    const BATCH_SIZE = 10;
-    let gridIndex = 0;
-    
-    const renderGridBatch = () => {
-      const batch = allItemsToRender.slice(gridIndex, gridIndex + BATCH_SIZE);
+      // 分批渲染常规知识列表卡片（每次 10 个）
+      const allItemsToRender = otherItems.length > 0 ? otherItems : knowledgeState.filteredItems;
+      const BATCH_SIZE = 10;
+      let gridIndex = 0;
       
-      batch.forEach(item => {
-        const card = createKnowledgeCard(item);
-        grid.appendChild(card);
-      });
-      
-      gridIndex += BATCH_SIZE;
-      
-      if (gridIndex < allItemsToRender.length) {
-        requestAnimationFrame(renderGridBatch);
-      } else {
-        // 所有卡片渲染完成后，批量初始化所有图标
-        if (window.lucide) {
-          window.lucide.createIcons(container);
+      const renderGridBatch = () => {
+        const batch = allItemsToRender.slice(gridIndex, gridIndex + BATCH_SIZE);
+        
+        batch.forEach(item => {
+          const card = createKnowledgeCard(item);
+          grid.appendChild(card);
+        });
+        
+        gridIndex += BATCH_SIZE;
+        
+        if (gridIndex < allItemsToRender.length) {
+          requestAnimationFrame(renderGridBatch);
+        } else {
+          // 所有卡片渲染完成后，批量初始化所有图标
+          if (window.lucide) {
+            window.lucide.createIcons(container);
+          }
+          // 渲染完成后结束性能计时
+          setTimeout(() => {
+            endTimer({ 
+              success: true, 
+              itemCount: allItemsToRender.length,
+              viewMode: 'grid'
+            });
+          }, 100);
         }
-        // 渲染完成后结束性能计时
-        setTimeout(() => {
-          endTimer({ 
-            success: true, 
-            itemCount: allItemsToRender.length,
-            viewMode: 'grid'
-          });
-        }, 100);
+      };
+      
+      // 开始渲染
+      requestAnimationFrame(renderGridBatch);
+    } else {
+      // 当 highlightFilterActive 为 true 时，只显示本次新提取区域，不需要渲染其他内容
+      // 但需要确保 fragment 已经添加到 DOM
+      if (fragment.children.length > 0) {
+        container.appendChild(fragment);
       }
-    };
-    
-    // 开始渲染
-    requestAnimationFrame(renderGridBatch);
-  }
+      
+      // 初始化图标
+      if (window.lucide) {
+        window.lucide.createIcons(container);
+      }
+      
+      // 渲染完成后结束性能计时
+      setTimeout(() => {
+        endTimer({ 
+          success: true, 
+          itemCount: latestItems.length,
+          viewMode: 'grid',
+          highlightFilterActive: true
+        });
+      }, 100);
+    }
 
     // 绑定"去文档库"按钮事件
     const goToRepoBtn = container.querySelector('#btn-go-to-repository');
@@ -700,6 +851,7 @@ export function renderKnowledgeView() {
       window.lucide.createIcons(container);
     }
   }
+}
 
 /**
  * 处理筛选变化
@@ -800,7 +952,34 @@ export async function initKnowledgeView() {
   // 监听知识库切换事件，重新加载知识列表
   document.addEventListener('knowledgeBaseChanged', async (event) => {
     console.log('[知识库] 知识库已切换，重新加载知识列表');
+    // 重置筛选和搜索状态，避免沿用上一个知识库的条件造成空列表误判
     knowledgeState.currentPage = 1;
+    knowledgeState.currentFilter = 'all';
+    knowledgeState.currentCategoryFilter = 'all';
+    knowledgeState.searchQuery = '';
+    
+    // 重置筛选按钮和搜索输入框的UI状态
+    try {
+      const filterContainer = document.getElementById('knowledge-status-filters');
+      if (filterContainer) {
+        filterContainer.querySelectorAll('.knowledge-filter-btn').forEach(btn => {
+          const isAll = btn.dataset.filter === 'all';
+          btn.classList.toggle('bg-slate-800', isAll);
+          btn.classList.toggle('text-white', isAll);
+          btn.classList.toggle('bg-white', !isAll);
+          btn.classList.toggle('text-slate-600', !isAll);
+          btn.classList.toggle('border', !isAll);
+          btn.classList.toggle('border-slate-200', !isAll);
+        });
+      }
+      const searchInput = document.getElementById('knowledge-search-input');
+      if (searchInput) {
+        searchInput.value = '';
+      }
+    } catch (e) {
+      console.warn('[知识库] 重置筛选/搜索状态时出现问题:', e);
+    }
+    
     await loadKnowledgeItems();
   });
 }

@@ -650,12 +650,41 @@ async function approveKnowledgeItem(itemId) {
 
     currentItem = response.data;
     renderDetailDrawer();
-    showToast('知识点已确认并入库', 'success');
+    showToast('知识卡片已确认，将在智能问答中优先使用', 'success');
     
-    // 刷新列表（如果列表视图存在）
-    if (window.refreshKnowledgeList) {
-      window.refreshKnowledgeList();
-    }
+    // 刷新列表 - 更新当前项的状态并刷新视图
+    setTimeout(async () => {
+      try {
+        // 清除 API 缓存，确保获取最新数据
+        const { clearAPICache } = await import('./api.js');
+        clearAPICache();
+        
+        const { loadKnowledgeItems, getKnowledgeState, renderKnowledgeView } = await import('./knowledge-items.js');
+        const state = getKnowledgeState();
+        
+        // 更新列表中对应项的状态（立即更新UI）
+        const itemIndex = state.items.findIndex(item => item.id === itemId);
+        if (itemIndex !== -1) {
+          state.items[itemIndex] = { ...state.items[itemIndex], status: 'confirmed' };
+        }
+        const filteredIndex = state.filteredItems.findIndex(item => item.id === itemId);
+        if (filteredIndex !== -1) {
+          state.filteredItems[filteredIndex] = { ...state.filteredItems[filteredIndex], status: 'confirmed' };
+        }
+        
+        // 立即更新视图
+        renderKnowledgeView();
+        
+        // 重新加载数据，这会自动应用筛选和渲染
+        await loadKnowledgeItems();
+      } catch (error) {
+        console.error('刷新列表失败:', error);
+        // 降级方案
+        if (window.refreshKnowledgeList) {
+          window.refreshKnowledgeList();
+        }
+      }
+    }, 100);
   } catch (error) {
     loadingToast.close();
     console.error('确认失败:', error);
@@ -685,15 +714,37 @@ async function deleteKnowledgeItem(itemId) {
     showToast('知识点已删除', 'success');
     closeKnowledgeDetail();
     
-    // 刷新列表 - 使用setTimeout确保详情页关闭后再刷新
-    setTimeout(() => {
-      if (window.refreshKnowledgeList) {
-        window.refreshKnowledgeList();
-      } else {
-        // 如果全局函数不存在，直接导入并调用
-        import('./knowledge-items.js').then(({ initKnowledgeView }) => {
-          initKnowledgeView();
-        });
+    // 刷新列表 - 清除缓存并重新加载数据
+    setTimeout(async () => {
+      try {
+        // 清除 API 缓存，确保获取最新数据
+        const { clearAPICache } = await import('./api.js');
+        clearAPICache();
+        
+        const { loadKnowledgeItems, getKnowledgeState } = await import('./knowledge-items.js');
+        const state = getKnowledgeState();
+        
+        // 从状态中移除已删除的项（立即更新UI）
+        state.items = state.items.filter(item => item.id !== itemId);
+        state.filteredItems = state.filteredItems.filter(item => item.id !== itemId);
+        
+        // 立即更新视图
+        const { renderKnowledgeView } = await import('./knowledge-items.js');
+        renderKnowledgeView();
+        
+        // 重置到第一页并重新加载，确保获取最新数据
+        state.currentPage = 1;
+        await loadKnowledgeItems();
+      } catch (error) {
+        console.error('刷新列表失败:', error);
+        // 降级方案：如果上面的方法失败，使用完整的初始化
+        if (window.refreshKnowledgeList) {
+          window.refreshKnowledgeList();
+        } else {
+          import('./knowledge-items.js').then(({ initKnowledgeView }) => {
+            initKnowledgeView();
+          });
+        }
       }
     }, 300);
   } catch (error) {
@@ -729,17 +780,18 @@ function removeKeyConclusion(index) {
  */
 function createStatusBadge(status) {
   const config = {
-    confirmed: { color: 'bg-blue-50 text-blue-600 border-blue-100', label: '已确认', icon: 'check-circle' },
-    pending: { color: 'bg-amber-50 text-amber-600 border-amber-100', label: '待审核', icon: 'alert-circle' },
-    archived: { color: 'bg-gray-100 text-gray-500 border-gray-200', label: '已归档', icon: 'archive' }
+    confirmed: { color: 'bg-blue-50 text-blue-600 border-blue-100', label: '已确认', icon: 'check-circle', showManual: true },
+    pending: { color: 'bg-amber-50 text-amber-600 border-amber-100', label: '待审核', icon: 'alert-circle', showManual: false },
+    archived: { color: 'bg-gray-100 text-gray-500 border-gray-200', label: '已归档', icon: 'archive', showManual: false }
   };
   
-  const { color, label, icon } = config[status] || config.confirmed;
+  const { color, label, icon, showManual } = config[status] || config.confirmed;
   
   return `
     <span class="px-2 py-0.5 rounded-md text-xs font-medium border flex items-center gap-1 ${color}">
       <i data-lucide="${icon}" size="10"></i>
       ${label}
+      ${showManual ? '<span class="ml-1 text-[10px] opacity-75">(人工确认)</span>' : ''}
     </span>
   `;
 }

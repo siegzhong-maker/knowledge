@@ -717,6 +717,10 @@
               <div class="space-y-1" id="knowledge-base-list">
                 <!-- PDF列表由JS动态渲染 -->
               </div>
+              <!-- 知识库切换加载状态提示 -->
+              <p id="kb-loading-indicator" class="px-2 mt-2 text-[11px] text-slate-400 hidden">
+                正在加载当前知识库的文档和对话记录...
+              </p>
             </div>
 
             <!-- 历史对话列表 -->
@@ -964,7 +968,15 @@
       >
         <div class="flex justify-between items-center mb-6">
           <h1 class="text-2xl font-bold text-slate-900">文档库</h1>
-          <div class="flex gap-2" id="repo-status-filters">
+          <div class="flex items-center gap-3">
+            <button
+              id="btn-repo-upload"
+              class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-upload"></i>
+              <span>上传文档</span>
+            </button>
+            <div class="flex gap-2" id="repo-status-filters">
             <button
               data-status-filter="all"
               class="status-filter-btn px-3 py-1.5 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
@@ -983,6 +995,7 @@
             >
               未提取
             </button>
+            </div>
           </div>
         </div>
         <div
@@ -1218,7 +1231,7 @@
               data-filter="pending"
               class="knowledge-filter-btn px-3 py-1.5 rounded-full text-sm font-medium transition-colors bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
             >
-              待审核
+              待确认
             </button>
           </div>
           
@@ -2036,54 +2049,8 @@
       });
     });
     
-    // PDF上传
-    document.addEventListener('DOMContentLoaded', () => {
-      const uploadBtn = document.getElementById('btn-upload-pdf');
-      if (uploadBtn) {
-        uploadBtn.addEventListener('click', async () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.pdf';
-          input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            try {
-              uploadBtn.disabled = true;
-              const originalHtml = uploadBtn.innerHTML;
-              uploadBtn.innerHTML = '上传中...';
-              
-              // 直接上传，不选择模块
-              const { uploadPDF } = await import('./js/pdf.js');
-              const result = await uploadPDF(file, null);
-              
-              // 重新加载PDF列表
-              const consultationModule = await import('./js/consultation.js');
-              await consultationModule.loadPDFList();
-              
-              alert('PDF上传成功！');
-              
-              uploadBtn.disabled = false;
-              uploadBtn.innerHTML = originalHtml;
-              if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-              }
-            } catch (error) {
-              console.error('上传失败:', error);
-              alert('上传失败: ' + error.message);
-              uploadBtn.disabled = false;
-              uploadBtn.innerHTML = '<i data-lucide="upload" size="12"></i> 上传参考文档';
-              if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-              }
-            }
-          };
-          input.click();
-        });
-      }
-      
-      // 模块选择器函数
-      async function showModuleSelector() {
+    // 模块选择器函数
+    async function showModuleSelector() {
         return new Promise(async (resolve) => {
           try {
             // 先检查知识库是否初始化
@@ -2234,12 +2201,12 @@
             resolve(null);
           }
         });
-      }
-      
-      window.showModuleSelector = showModuleSelector;
-      
-      // 确保 showModuleSwitcher 可用
-      window.showModuleSwitcher = async function() {
+    }
+    
+    window.showModuleSelector = showModuleSelector;
+    
+    // 确保 showModuleSwitcher 可用
+    window.showModuleSwitcher = async function() {
         try {
           const modulesModule = await import('./js/modules.js');
           if (modulesModule.showModuleSwitcher) {
@@ -2250,18 +2217,17 @@
         }
       };
       
-      // 确保 startConversation 可用
-      window.startConversation = async function(question = null) {
-        try {
-          const consultationModule = await import('./js/consultation.js');
-          if (consultationModule.startConversation) {
-            await consultationModule.startConversation(question);
-          }
-        } catch (error) {
-          console.error('加载对话模块失败:', error);
+    // 确保 startConversation 可用
+    window.startConversation = async function(question = null) {
+      try {
+        const consultationModule = await import('./js/consultation.js');
+        if (consultationModule.startConversation) {
+          await consultationModule.startConversation(question);
         }
-      };
-    });
+      } catch (error) {
+        console.error('加载对话模块失败:', error);
+      }
+    };
   </script>
   
   <!-- 性能测试脚本（仅开发环境） -->
