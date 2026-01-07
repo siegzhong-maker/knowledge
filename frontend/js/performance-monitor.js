@@ -30,10 +30,14 @@ class PerformanceMonitor {
     
     // 开发模式自动启用
     const isDev = window.location.hostname === 'localhost' || 
-                  window.location.hostname === '127.0.0.1' ||
-                  window.location.search.includes('perf=1');
+                  window.location.hostname === '127.0.0.1';
     
-    return isDev;
+    // 生产环境：通过 URL 参数或 localStorage 启用
+    const urlParams = new URLSearchParams(window.location.search);
+    const enablePerf = urlParams.get('perf') === '1' || 
+                       localStorage.getItem('enablePerformanceMonitor') === 'true';
+    
+    return isDev || enablePerf;
   }
 
   /**

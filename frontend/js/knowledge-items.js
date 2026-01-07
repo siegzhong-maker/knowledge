@@ -373,6 +373,19 @@ export function renderKnowledgeView() {
     return;
   }
   
+  // 性能监控
+  const perfMonitor = window.performanceMonitor;
+  const timer = perfMonitor ? perfMonitor.start('render-knowledge-view', { 
+    itemCount: knowledgeState.filteredItems.length 
+  }) : null;
+  
+  // 定义 endTimer 辅助函数（确保在所有渲染路径中可访问）
+  const endTimer = (metadata = {}) => {
+    if (timer && perfMonitor) {
+      perfMonitor.end(timer, metadata);
+    }
+  };
+  
   // 更新计数
   const countElement = document.getElementById('knowledge-items-count');
   if (countElement) {
@@ -486,9 +499,7 @@ export function renderKnowledgeView() {
       window.lucide.createIcons();
     }
     // 空状态渲染完成
-    if (timer && perfMonitor) {
-      perfMonitor.end(timer, { success: true, viewMode: 'empty' });
-    }
+    endTimer({ success: true, viewMode: 'empty' });
     return;
   }
 

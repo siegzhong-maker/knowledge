@@ -544,14 +544,55 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
       if (zoomLevelEl) zoomLevelEl.textContent = Math.round(currentScale * 100);
     }
 
-    // 绑定事件
-    const prevBtn = document.getElementById('pdf-prev-page');
-    const nextBtn = document.getElementById('pdf-next-page');
-    const zoomInBtn = document.getElementById('pdf-zoom-in');
-    const zoomOutBtn = document.getElementById('pdf-zoom-out');
-    const fitWidthBtn = document.getElementById('pdf-fit-width');
+    // 绑定事件 - 使用延迟确保 DOM 完全渲染
+    const bindButtonEvents = () => {
+      const prevBtn = document.getElementById('pdf-prev-page');
+      const nextBtn = document.getElementById('pdf-next-page');
+      const zoomInBtn = document.getElementById('pdf-zoom-in');
+      const zoomOutBtn = document.getElementById('pdf-zoom-out');
+      const fitWidthBtn = document.getElementById('pdf-fit-width');
 
-    if (prevBtn) {
+      // 检查按钮是否存在
+      if (!prevBtn || !nextBtn || !zoomInBtn || !zoomOutBtn) {
+        console.warn('PDF查看器：部分按钮未找到', {
+          prevBtn: !!prevBtn,
+          nextBtn: !!nextBtn,
+          zoomInBtn: !!zoomInBtn,
+          zoomOutBtn: !!zoomOutBtn
+        });
+        // 使用事件委托作为后备方案
+        const toolbar = container.querySelector('.pdf-toolbar');
+        if (toolbar) {
+          toolbar.addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            
+            const btnId = target.id;
+            if (btnId === 'pdf-prev-page' && currentPage > 1) {
+              currentPage--;
+              await scrollToPage(currentPage);
+              updatePageInfo();
+            } else if (btnId === 'pdf-next-page' && currentPage < numPages) {
+              currentPage++;
+              await scrollToPage(currentPage);
+              updatePageInfo();
+            } else if (btnId === 'pdf-zoom-in') {
+              currentScale = Math.min(currentScale + 0.25, 3);
+              await renderAllPages();
+              scrollToPage(currentPage);
+              updatePageInfo();
+            } else if (btnId === 'pdf-zoom-out') {
+              currentScale = Math.max(currentScale - 0.25, 0.5);
+              await renderAllPages();
+              scrollToPage(currentPage);
+              updatePageInfo();
+            }
+          });
+        }
+        return;
+      }
+
+      // 正常绑定事件
       prevBtn.addEventListener('click', async () => {
         if (currentPage > 1) {
           currentPage--;
@@ -561,9 +602,7 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
           nextBtn.disabled = currentPage === numPages;
         }
       });
-    }
 
-    if (nextBtn) {
       nextBtn.addEventListener('click', async () => {
         if (currentPage < numPages) {
           currentPage++;
@@ -573,42 +612,43 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
           nextBtn.disabled = currentPage === numPages;
         }
       });
-    }
 
-    if (zoomInBtn) {
       zoomInBtn.addEventListener('click', async () => {
         currentScale = Math.min(currentScale + 0.25, 3);
         await renderAllPages();
         scrollToPage(currentPage);
         updatePageInfo();
       });
-    }
 
-    if (zoomOutBtn) {
       zoomOutBtn.addEventListener('click', async () => {
         currentScale = Math.max(currentScale - 0.25, 0.5);
         await renderAllPages();
         scrollToPage(currentPage);
         updatePageInfo();
       });
-    }
 
-    if (fitWidthBtn) {
-      fitWidthBtn.addEventListener('click', async () => {
-        // 计算适应宽度的缩放比例
-        const firstPage = await pdf.getPage(1);
-        const viewport = firstPage.getViewport({ scale: 1 });
-        const containerWidth = pagesContainer.clientWidth || 800;
-        currentScale = (containerWidth - 40) / viewport.width; // 减去padding
-        await renderAllPages();
-        scrollToPage(currentPage);
-        updatePageInfo();
-      });
-    }
+      if (fitWidthBtn) {
+        fitWidthBtn.addEventListener('click', async () => {
+          // 计算适应宽度的缩放比例
+          const firstPage = await pdf.getPage(1);
+          const viewport = firstPage.getViewport({ scale: 1 });
+          const containerWidth = pagesContainer.clientWidth || 800;
+          currentScale = (containerWidth - 40) / viewport.width; // 减去padding
+          await renderAllPages();
+          scrollToPage(currentPage);
+          updatePageInfo();
+        });
+      }
 
-    // 初始化按钮状态
-    if (prevBtn) prevBtn.disabled = currentPage === 1;
-    if (nextBtn) nextBtn.disabled = currentPage === numPages;
+      // 初始化按钮状态
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === numPages;
+      
+      console.log('PDF查看器：按钮事件绑定成功');
+    };
+
+    // 延迟绑定，确保 DOM 完全渲染
+    setTimeout(bindButtonEvents, 100);
 
     // 初始渲染
     await renderAllPages();
