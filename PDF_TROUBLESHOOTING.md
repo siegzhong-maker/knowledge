@@ -117,7 +117,41 @@ npm run check-pdfs
 
 ## 解决方案
 
-### 1. 文件已丢失
+### 1. 修复绝对路径问题（最常见）⭐
+
+**问题**：数据库中的 `file_path` 是本地开发环境的绝对路径（如 `/Users/silas/Desktop/knowledge/backend/uploads/...`），部署到Railway后这些路径不存在。
+
+**解决方法A：通过API端点修复（推荐）**
+
+在浏览器中访问或使用curl：
+
+```bash
+# 使用POST请求修复路径
+curl -X POST https://your-app.up.railway.app/api/diagnose/fix-pdf-paths
+```
+
+或者在浏览器中直接访问（某些浏览器可能不支持POST，建议使用curl或Postman）。
+
+**解决方法B：使用Railway CLI**
+
+```bash
+railway run npm run fix-pdf-paths
+```
+
+**解决方法C：本地运行（如果有数据库访问权限）**
+
+```bash
+npm run fix-pdf-paths
+```
+
+这个脚本会：
+- 扫描所有PDF记录
+- 将绝对路径转换为相对路径（仅保留文件名）
+- 更新数据库
+
+**修复后**：文件路径会从 `/Users/silas/Desktop/knowledge/backend/uploads/file.pdf` 变为 `file.pdf`，这样系统就能在 `/data/uploads/` 目录中找到文件了。
+
+### 2. 文件已丢失
 
 如果文件确实已丢失，可以：
 
@@ -129,7 +163,7 @@ npm run check-pdfs
 - 从备份中恢复文件到正确的位置
 - 确保文件路径与数据库记录一致
 
-### 2. 文件路径不匹配
+### 3. 文件路径不匹配
 
 如果文件存在但路径不匹配：
 

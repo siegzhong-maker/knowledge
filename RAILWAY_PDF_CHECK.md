@@ -90,6 +90,36 @@ railway run npm run check-pdfs
 - `尝试的路径`
 - `MissingPDF`
 
+## 修复PDF路径问题
+
+如果检查结果显示文件缺失，且缺失文件的路径是绝对路径（如 `/Users/silas/Desktop/...`），这是路径问题，可以通过以下方式修复：
+
+### 方法1：通过API端点修复（推荐）
+
+使用curl或Postman发送POST请求：
+
+```bash
+curl -X POST https://your-app.up.railway.app/api/diagnose/fix-pdf-paths
+```
+
+这会自动修复所有绝对路径，将它们转换为相对路径（仅文件名）。
+
+### 方法2：使用Railway CLI
+
+```bash
+railway run npm run fix-pdf-paths
+```
+
+### 修复后
+
+修复完成后，再次运行检查：
+```bash
+# 检查修复结果
+curl https://your-app.up.railway.app/api/diagnose/pdfs
+```
+
+应该会看到缺失文件数量减少或变为0。
+
 ## 常见问题
 
 ### Q: 访问 `/api/diagnose/pdfs` 返回404？
@@ -107,13 +137,16 @@ A:
 3. 点击服务名称
 4. 在 "Settings" > "Domains" 中查看
 
-### Q: 检查结果显示文件缺失，怎么办？
+### Q: 检查结果显示文件缺失，且路径是绝对路径？
 
-A: 参考 `PDF_TROUBLESHOOTING.md` 中的解决方案：
-1. 检查Volume是否正确挂载
-2. 检查文件是否在其他位置
-3. 重新上传缺失的文件
-4. 更新数据库中的文件路径
+A: 这是路径问题，使用上面的修复方法即可。修复脚本会将绝对路径转换为相对路径。
+
+### Q: 修复后文件仍然缺失？
+
+A: 可能的原因：
+1. 文件确实不存在于Volume中（需要重新上传）
+2. Volume未正确挂载（检查Railway Volume配置）
+3. 文件在其他位置（需要手动移动或更新路径）
 
 ## 相关文档
 

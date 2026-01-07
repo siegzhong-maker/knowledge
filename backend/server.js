@@ -70,6 +70,27 @@ app.get('/api/diagnose/pdfs', async (req, res) => {
   }
 });
 
+// PDF路径修复端点（用于Railway部署）
+app.post('/api/diagnose/fix-pdf-paths', async (req, res) => {
+  try {
+    const { fixPDFPaths } = require('./scripts/fix-pdf-paths');
+    const result = await fixPDFPaths();
+    
+    res.json({
+      success: true,
+      data: result,
+      message: `修复完成：共修复 ${result.fixed} 个路径，跳过 ${result.skipped} 个`
+    });
+  } catch (error) {
+    console.error('PDF路径修复失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'PDF路径修复失败',
+      error: error.stack
+    });
+  }
+});
+
 // 文件系统诊断端点
 app.get('/api/diagnose/files', async (req, res) => {
   try {
