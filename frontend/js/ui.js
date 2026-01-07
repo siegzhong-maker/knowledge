@@ -161,6 +161,12 @@ const elBtnBatchSummary = $('btn-batch-summary');
 const elBtnCloseDetail = $('btn-close-detail');
 const elRepoSearchInput = $('repo-search-input');
 const elTagsContainer = $('tags-container');
+const elGuideModal = $('guide-modal');
+const elGuideContent = $('guide-content');
+const elBtnOpenGuide = $('btn-open-guide');
+const elBtnCloseGuide = $('btn-close-guide');
+const elBtnCloseGuideFooter = $('btn-close-guide-footer');
+const elBtnGuideOpenSettings = $('btn-guide-open-settings');
 // Toast系统已统一到 toast.js，不再需要本地容器引用
 // const elToastContainer = $('toast-container');
 
@@ -423,9 +429,21 @@ function renderRepoList() {
   const search = (elRepoSearchInput?.value || '').trim();
   let data = allItems;
   
-  // 状态筛选
+  // 状态筛选（基于提取状态）
   if (currentStatusFilter !== 'all') {
-    data = data.filter(item => item.status === currentStatusFilter);
+    if (currentStatusFilter === 'extracted') {
+      // 筛选已提取的文档
+      data = data.filter(item => {
+        const extracted = item.knowledge_extracted;
+        return extracted === true || extracted === 1;
+      });
+    } else if (currentStatusFilter === 'not-extracted') {
+      // 筛选未提取的文档
+      data = data.filter(item => {
+        const extracted = item.knowledge_extracted;
+        return extracted === false || extracted === 0 || extracted === null || extracted === undefined;
+      });
+    }
   }
   
   // 搜索筛选
@@ -460,11 +478,43 @@ function renderRepoList() {
   });
 
   if (data.length === 0) {
+    // 检查是否是搜索/筛选导致的空结果
+    const isFiltered = search || currentStatusFilter !== 'all';
     elRepoList.innerHTML = `
       <tr>
-        <td colspan="5" class="px-6 py-12 text-center text-slate-400">
-          <i class="fa-solid fa-inbox text-3xl mb-2"></i>
-          <p>暂无内容</p>
+        <td colspan="6" class="px-6 py-16 text-center">
+          <div class="flex flex-col items-center justify-center max-w-md mx-auto">
+            <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+              <i class="fa-solid ${isFiltered ? 'fa-search' : 'fa-file-upload'} text-3xl text-slate-400"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-slate-700 mb-2">
+              ${isFiltered ? '没有找到匹配的文档' : '还没有文档'}
+            </h3>
+            <p class="text-sm text-slate-500 mb-6">
+              ${isFiltered 
+                ? '尝试调整搜索条件或筛选器' 
+                : '上传PDF文档开始使用，系统会自动提取知识卡片'}
+            </p>
+            ${!isFiltered ? `
+              <button
+                onclick="document.getElementById('btn-upload-pdf')?.click() || (window.switchView && window.switchView('consultation'))"
+                class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-md flex items-center gap-2"
+              >
+                <i class="fa-solid fa-upload"></i>
+                <span>上传第一个文档</span>
+              </button>
+              <p class="text-xs text-slate-400 mt-4">
+                提示：也可以在智能问答页面左侧上传文档
+              </p>
+            ` : `
+              <button
+                onclick="document.getElementById('repo-search-input').value = ''; document.getElementById('repo-search-input').dispatchEvent(new Event('input')); document.querySelectorAll('.status-filter-btn').forEach(btn => { if(btn.dataset.statusFilter === 'all') btn.click(); });"
+                class="px-4 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                清除筛选条件
+              </button>
+            `}
+          </div>
         </td>
       </tr>
     `;
@@ -477,15 +527,12 @@ function renderRepoList() {
   const tempTbody = document.createElement('tbody');
   
   data.forEach((item) => {
-    // 状态徽章
-    let statusBadge = '';
-    if (item.status === 'pending') {
-      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">待处理</span>';
-    } else if (item.status === 'processed') {
-      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-green-100 text-green-800">已处理</span>';
-    } else {
-      statusBadge = '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">已归档</span>';
-    }
+    // 提取状态徽章（统一显示提取状态，不再显示处理状态）
+    const extracted = item.knowledge_extracted;
+    const isExtracted = extracted === true || extracted === 1;
+    const extractionBadge = isExtracted
+      ? '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1"><i class="fa-solid fa-check text-[10px]"></i>已提取</span>'
+      : '<span class="px-2 inline-flex text-[11px] leading-5 font-semibold rounded-full bg-slate-100 text-slate-600 flex items-center gap-1"><i class="fa-solid fa-circle text-[10px]"></i>未提取</span>';
     
     tempTbody.innerHTML = `
     <tr class="cursor-pointer" data-id="${item.id}" onclick="window.openDetailById && window.openDetailById('${item.id}')">
@@ -505,41 +552,42 @@ function renderRepoList() {
         ${item.page_count || 0} 页
       </td>
       <td class="px-6 py-3 whitespace-nowrap">
-        ${statusBadge}
+        ${extractionBadge}
       </td>
       <td class="px-6 py-3 whitespace-nowrap text-sm">
-        <div class="flex items-center gap-2">
+        <div class="flex items-center justify-end gap-2">
           <button
             data-action="extract"
             data-id="${item.id}"
-            class="text-blue-600 hover:text-blue-800 transition-colors"
-            title="提取知识"
+            class="px-2.5 py-1.5 ${isExtracted ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'} rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
+            title="${isExtracted ? '重新提取知识卡片' : '提取知识卡片'}"
           >
-            <i class="fa-solid fa-sparkles"></i>
+            <i class="fa-solid ${isExtracted ? 'fa-rotate' : 'fa-sparkles'} text-xs"></i>
+            <span>${isExtracted ? '重新提取' : '提取'}</span>
           </button>
           <button
             data-action="view"
             data-id="${item.id}"
-            class="text-indigo-600 hover:text-indigo-800 transition-colors"
-            title="查看"
+            class="px-2.5 py-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md transition-colors flex items-center justify-center"
+            title="预览"
           >
-            <i class="fa-solid fa-eye"></i>
+            <i class="fa-solid fa-eye text-sm"></i>
           </button>
           <button
             data-action="archive"
             data-id="${item.id}"
-            class="text-slate-600 hover:text-slate-800 transition-colors"
+            class="px-2.5 py-1.5 text-slate-600 hover:text-slate-800 hover:bg-slate-50 rounded-md transition-colors flex items-center justify-center"
             title="归档"
           >
-            <i class="fa-solid fa-archive"></i>
+            <i class="fa-solid fa-archive text-sm"></i>
           </button>
           <button
             data-action="delete"
             data-id="${item.id}"
-            class="text-red-600 hover:text-red-800 transition-colors"
+            class="px-2.5 py-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors flex items-center justify-center"
             title="删除"
           >
-            <i class="fa-solid fa-trash"></i>
+            <i class="fa-solid fa-trash text-sm"></i>
           </button>
         </div>
       </td>
@@ -629,30 +677,30 @@ function renderArchiveList() {
         ${item.page_count || 0} 页
       </td>
       <td class="px-6 py-3 whitespace-nowrap text-sm">
-        <div class="flex items-center gap-2">
+        <div class="flex items-center justify-end gap-2">
           <button
             data-action="view"
             data-id="${item.id}"
-            class="text-indigo-600 hover:text-indigo-800 transition-colors"
-            title="查看"
+            class="px-2.5 py-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md transition-colors flex items-center justify-center"
+            title="预览"
           >
-            <i class="fa-solid fa-eye"></i>
+            <i class="fa-solid fa-eye text-sm"></i>
           </button>
           <button
             data-action="restore"
             data-id="${item.id}"
-            class="text-green-600 hover:text-green-800 transition-colors"
+            class="px-2.5 py-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors flex items-center justify-center"
             title="恢复"
           >
-            <i class="fa-solid fa-rotate-left"></i>
+            <i class="fa-solid fa-rotate-left text-sm"></i>
           </button>
           <button
             data-action="permanent-delete"
             data-id="${item.id}"
-            class="text-red-600 hover:text-red-800 transition-colors"
+            class="px-2.5 py-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors flex items-center justify-center"
             title="永久删除"
           >
-            <i class="fa-solid fa-trash"></i>
+            <i class="fa-solid fa-trash text-sm"></i>
           </button>
         </div>
       </td>
@@ -2055,6 +2103,39 @@ function closeSettingsModal() {
   }, 160);
 }
 
+// 打开引导模态框
+function openGuideModal() {
+  if (!elGuideModal || !elGuideContent) return;
+  
+  elGuideModal.classList.remove('hidden');
+  elGuideModal.classList.add('flex');
+  
+  // 初始化Lucide图标
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons(elGuideModal);
+  }
+  
+  requestAnimationFrame(() => {
+    elGuideContent.classList.remove('opacity-0', 'scale-95');
+    elGuideContent.classList.add('opacity-100', 'scale-100');
+  });
+}
+
+// 关闭引导模态框
+function closeGuideModal() {
+  if (!elGuideContent) return;
+  
+  elGuideContent.classList.remove('opacity-100', 'scale-100');
+  elGuideContent.classList.add('opacity-0', 'scale-95');
+  
+  setTimeout(() => {
+    if (elGuideModal) {
+      elGuideModal.classList.add('hidden');
+      elGuideModal.classList.remove('flex');
+    }
+  }, 160);
+}
+
 async function loadSettings() {
   try {
     // 加载用户管理模块
@@ -2463,12 +2544,29 @@ function bindEvents() {
           // 不再显示toast，进度信息由底部进度条显示
           
           // 开始提取
-          await extractFromDocument(id, currentKbId, (progress) => {
+          await extractFromDocument(id, currentKbId, async (progress) => {
             if (progress.status === 'completed') {
-              // 自动跳转到知识库视图
+              // 显示成功提示
+              const { showToast } = await import('./toast.js');
+              showToast(
+                `提取完成！成功生成 ${progress.extractedCount || 0} 个知识点，正在跳转到知识库...`,
+                'success',
+                3000
+              );
+              
+              // 延迟跳转到知识库视图，让用户看到完成提示
               setTimeout(() => {
                 switchView('knowledge-items');
-              }, 1000);
+                // 刷新知识库列表以显示新提取的内容
+                setTimeout(async () => {
+                  try {
+                    const { initKnowledgeView } = await import('./knowledge-items.js');
+                    await initKnowledgeView();
+                  } catch (e) {
+                    console.warn('刷新知识库失败:', e);
+                  }
+                }, 500);
+              }, 1500);
             }
             // 进度信息由进度条显示，不再使用toast
           });
@@ -2659,6 +2757,38 @@ function bindEvents() {
       if (e.target === elSettingsModal) closeSettingsModal();
     });
   }
+
+  // 引导模态框
+  if (elBtnOpenGuide) {
+    elBtnOpenGuide.addEventListener('click', openGuideModal);
+  }
+  if (elBtnCloseGuide) {
+    elBtnCloseGuide.addEventListener('click', closeGuideModal);
+  }
+  if (elBtnCloseGuideFooter) {
+    elBtnCloseGuideFooter.addEventListener('click', closeGuideModal);
+  }
+  if (elGuideModal) {
+    elGuideModal.addEventListener('click', (e) => {
+      if (e.target === elGuideModal) closeGuideModal();
+    });
+  }
+  // 引导中打开设置的快捷按钮
+  if (elBtnGuideOpenSettings) {
+    elBtnGuideOpenSettings.addEventListener('click', () => {
+      closeGuideModal();
+      setTimeout(() => {
+        openSettingsModal();
+      }, 200);
+    });
+  }
+  
+  // ESC键关闭引导模态框
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elGuideModal && !elGuideModal.classList.contains('hidden')) {
+      closeGuideModal();
+    }
+  });
   if (elBtnToggleApiKey) {
     elBtnToggleApiKey.addEventListener('click', () => {
       if (elInputApiKey.type === 'password') {

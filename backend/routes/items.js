@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
     // 这些字段只在查看详情时加载
     let sql = `SELECT id, type, title, original_url, summary_ai, source, tags, 
                file_path, page_count, created_at, updated_at, status, 
-               knowledge_base_id, module_id 
+               knowledge_base_id, module_id, knowledge_extracted
                FROM source_items WHERE 1=1`;
     const params = [];
 

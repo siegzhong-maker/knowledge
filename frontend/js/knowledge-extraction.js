@@ -47,6 +47,19 @@ export async function extractFromDocument(docId, knowledgeBaseId = null, onProgr
       status: 'processing',
       onProgress
     });
+    
+    // 同时更新进度条中的任务信息（用于重试功能）
+    const { updateExtractionProgress } = await import('./extraction-progress-bar.js');
+    updateExtractionProgress(extractionId, {
+      docName,
+      status: 'processing',
+      progress: 0,
+      totalItems: 1,
+      processedItems: 0,
+      extractedCount: 0,
+      docId, // 传递docId
+      knowledgeBaseId // 传递knowledgeBaseId
+    });
 
     // 更新进度通知栏
     updateExtractionProgress(extractionId, {
@@ -102,6 +115,19 @@ export async function extractFromDocuments(docIds, knowledgeBaseId = null, onPro
       knowledgeBaseId,
       status: 'processing',
       onProgress
+    });
+    
+    // 同时更新进度条中的任务信息（用于重试功能）
+    const { updateExtractionProgress } = await import('./extraction-progress-bar.js');
+    updateExtractionProgress(extractionId, {
+      docName,
+      status: 'processing',
+      progress: 0,
+      totalItems: docIds.length,
+      processedItems: 0,
+      extractedCount: 0,
+      docIds, // 传递docIds
+      knowledgeBaseId // 传递knowledgeBaseId
     });
 
     // 更新进度通知栏
@@ -239,6 +265,18 @@ async function pollExtractionStatus(extractionId) {
       } else {
         // 如果没有进度回调，才在这里显示Toast
         showToast(`提取完成！成功生成 ${extractedCount} 个知识点`, 'success');
+      }
+      
+      // 刷新文档列表以更新提取状态（如果在文档库视图中）
+      try {
+        if (typeof window !== 'undefined' && window.loadItems) {
+          // 延迟刷新，确保后端状态已更新
+          setTimeout(() => {
+            window.loadItems();
+          }, 1000);
+        }
+      } catch (e) {
+        console.warn('刷新文档列表失败:', e);
       }
       
       // 延迟清理任务，让用户看到完成状态

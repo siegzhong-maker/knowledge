@@ -376,36 +376,83 @@ export function renderKnowledgeView() {
 
   // 如果正在加载
   if (knowledgeState.loading && knowledgeState.items.length === 0) {
+    // 使用骨架屏提供更好的加载体验
     container.innerHTML = `
-      <div class="flex flex-col items-center justify-center h-64 text-slate-400">
-        <i data-lucide="loader-2" class="animate-spin mb-3" size="32"></i>
-        <p>加载中...</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
+        ${Array.from({ length: 6 }).map(() => `
+          <div class="bg-white rounded-xl border border-slate-200 p-5 animate-pulse">
+            <div class="flex justify-between items-start mb-3">
+              <div class="flex gap-2">
+                <div class="h-5 w-16 bg-slate-200 rounded"></div>
+                <div class="h-4 w-20 bg-slate-200 rounded"></div>
+              </div>
+              <div class="h-5 w-20 bg-slate-200 rounded"></div>
+            </div>
+            <div class="h-6 w-3/4 bg-slate-200 rounded mb-2"></div>
+            <div class="h-4 w-full bg-slate-200 rounded mb-1"></div>
+            <div class="h-4 w-5/6 bg-slate-200 rounded mb-4"></div>
+            <div class="flex gap-2 mb-4">
+              <div class="h-6 w-16 bg-slate-200 rounded"></div>
+              <div class="h-6 w-20 bg-slate-200 rounded"></div>
+            </div>
+            <div class="h-4 w-24 bg-slate-200 rounded"></div>
+          </div>
+        `).join('')}
       </div>
     `;
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
     return;
   }
 
   // 如果没有数据
   if (knowledgeState.filteredItems.length === 0) {
+    const isFiltered = knowledgeState.searchQuery || knowledgeState.currentFilter !== 'all' || knowledgeState.currentCategoryFilter !== 'all';
+    const isEmpty = knowledgeState.items.length === 0;
+    
     container.innerHTML = `
-      <div class="flex flex-col items-center justify-center h-64 text-slate-400 bg-white border border-dashed border-slate-200 rounded-xl">
-        <div class="bg-slate-50 p-4 rounded-full mb-3">
-          <i data-lucide="search" size="32"></i>
+      <div class="flex flex-col items-center justify-center min-h-[400px] bg-white border border-dashed border-slate-200 rounded-xl p-8">
+        <div class="w-24 h-24 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-full flex items-center justify-center mb-6 shadow-sm">
+          <i data-lucide="${isFiltered ? 'search-x' : 'sparkles'}" size="40" class="text-slate-400"></i>
         </div>
-        <p>没有找到相关知识点</p>
-        <button 
-          id="btn-go-to-repository"
-          class="mt-4 text-blue-600 font-medium text-sm hover:underline"
-        >
-          去文档库提取新知识
-        </button>
+        <h3 class="text-lg font-semibold text-slate-700 mb-2">
+          ${isFiltered ? '没有找到匹配的知识点' : isEmpty ? '知识库还是空的' : '暂无知识点'}
+        </h3>
+        <p class="text-sm text-slate-500 mb-6 text-center max-w-md">
+          ${isFiltered 
+            ? '尝试调整搜索条件或筛选器，或清除筛选查看全部内容' 
+            : isEmpty
+              ? '从文档库提取知识卡片，或手动创建知识点开始构建你的知识库'
+              : '当前筛选条件下没有知识点'}
+        </p>
+        <div class="flex items-center gap-3">
+          ${isEmpty ? `
+            <button 
+              id="btn-go-to-repository"
+              class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-md flex items-center gap-2"
+            >
+              <i data-lucide="file-text" size="16"></i>
+              <span>去文档库提取知识</span>
+            </button>
+            <button 
+              id="btn-create-knowledge"
+              class="px-6 py-2.5 bg-white text-slate-700 border border-slate-200 rounded-lg font-medium hover:bg-slate-50 transition-colors flex items-center gap-2"
+            >
+              <i data-lucide="plus-circle" size="16"></i>
+              <span>手动创建</span>
+            </button>
+          ` : `
+            <button 
+              onclick="document.getElementById('knowledge-search-input').value = ''; document.getElementById('knowledge-search-input').dispatchEvent(new Event('input')); document.querySelectorAll('.knowledge-filter-btn, .category-filter-btn').forEach(btn => { if(btn.dataset.filter === 'all' || btn.dataset.category === 'all') btn.click(); });"
+              class="px-4 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+            >
+              <i data-lucide="x" size="14"></i>
+              <span>清除筛选</span>
+            </button>
+          `}
+        </div>
       </div>
     `;
     
-    // 绑定"去文档库"按钮事件
+    // 绑定按钮事件
     const goToRepoBtn = container.querySelector('#btn-go-to-repository');
     if (goToRepoBtn) {
       goToRepoBtn.addEventListener('click', () => {
@@ -413,6 +460,16 @@ export function renderKnowledgeView() {
           window.switchView('repository');
         } else {
           console.error('switchView函数未定义');
+        }
+      });
+    }
+    
+    const createBtn = container.querySelector('#btn-create-knowledge');
+    if (createBtn) {
+      createBtn.addEventListener('click', () => {
+        // TODO: 实现手动创建知识点功能
+        if (window.showToast) {
+          window.showToast('手动创建功能开发中', 'info');
         }
       });
     }

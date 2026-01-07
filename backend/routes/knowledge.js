@@ -694,6 +694,9 @@ router.delete('/items/:id', async (req, res) => {
       });
     }
 
+    // 保存来源文档ID（在删除前）
+    const sourceItemId = existing.source_item_id;
+
     // 删除知识点
     await db.run(
       'DELETE FROM personal_knowledge_items WHERE id = ?',
@@ -705,6 +708,40 @@ router.delete('/items/:id', async (req, res) => {
       'DELETE FROM knowledge_relations WHERE source_knowledge_id = ? OR target_knowledge_id = ?',
       [id, id]
     );
+
+    // 如果知识点有关联的文档，检查文档是否还有其他知识点
+    if (sourceItemId) {
+      try {
+        // 检查该文档是否还有其他知识点
+        const remainingKnowledge = await db.get(
+          'SELECT COUNT(*) as count FROM personal_knowledge_items WHERE source_item_id = ?',
+          [sourceItemId]
+        );
+
+        // 如果没有其他知识点，重置文档的提取状态
+        if (remainingKnowledge && (remainingKnowledge.count === 0 || remainingKnowledge.count === '0')) {
+          const DATABASE_URL = process.env.DATABASE_URL;
+          const DB_TYPE = process.env.DB_TYPE;
+          const isPostgreSQL = DATABASE_URL || DB_TYPE === 'postgres';
+          const now = Date.now();
+
+          if (isPostgreSQL) {
+            await db.run(
+              'UPDATE source_items SET knowledge_extracted = FALSE, updated_at = ? WHERE id = ?',
+              [now, sourceItemId]
+            );
+          } else {
+            await db.run(
+              'UPDATE source_items SET knowledge_extracted = 0, updated_at = ? WHERE id = ?',
+              [now, sourceItemId]
+            );
+          }
+        }
+      } catch (error) {
+        // 如果字段不存在或更新失败，只记录警告，不影响删除操作
+        console.warn('重置文档提取状态失败:', error.message);
+      }
+    }
 
     res.json({
       success: true,

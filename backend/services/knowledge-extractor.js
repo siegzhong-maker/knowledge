@@ -313,6 +313,32 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
     ]
   );
 
+  // 如果知识点有关联的文档，标记文档为已提取
+  if (knowledgeItem.sourceItemId) {
+    try {
+      // 使用兼容SQLite和PostgreSQL的语法
+      // SQLite使用INTEGER，PostgreSQL使用BOOLEAN，但在db层会自动转换
+      const DATABASE_URL = process.env.DATABASE_URL;
+      const DB_TYPE = process.env.DB_TYPE;
+      const isPostgreSQL = DATABASE_URL || DB_TYPE === 'postgres';
+      
+      if (isPostgreSQL) {
+        await db.run(
+          `UPDATE source_items SET knowledge_extracted = TRUE, updated_at = ? WHERE id = ?`,
+          [now, knowledgeItem.sourceItemId]
+        );
+      } else {
+        await db.run(
+          `UPDATE source_items SET knowledge_extracted = 1, updated_at = ? WHERE id = ?`,
+          [now, knowledgeItem.sourceItemId]
+        );
+      }
+    } catch (error) {
+      // 如果字段不存在或更新失败，只记录警告，不影响知识点保存
+      console.warn('标记文档为已提取失败:', error.message);
+    }
+  }
+
   return id;
 }
 

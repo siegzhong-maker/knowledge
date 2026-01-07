@@ -75,6 +75,11 @@ db.serialize(() => {
       console.error('添加page_content字段失败:', err.message);
     }
   });
+  db.run(`ALTER TABLE source_items ADD COLUMN knowledge_extracted INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('添加knowledge_extracted字段失败:', err.message);
+    }
+  });
 
   // tags 表
   db.run(`

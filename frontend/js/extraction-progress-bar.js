@@ -53,7 +53,10 @@ export function updateExtractionProgress(extractionId, taskInfo) {
     stage = 'parsing',
     knowledgeItems = [],
     currentDocIndex = 0,
-    etaSeconds = null
+    etaSeconds = null,
+    docId = null, // 用于重试
+    docIds = null, // 用于重试
+    knowledgeBaseId = null // 用于重试
   } = taskInfo;
 
   // 记录任务开始时间
@@ -77,6 +80,9 @@ export function updateExtractionProgress(extractionId, taskInfo) {
     progressHistory.set(extractionId, history);
   }
 
+  // 保留或更新docId/docIds（用于重试功能）
+  const existingTask = progressTasks.get(extractionId);
+  
   progressTasks.set(extractionId, {
     extractionId,
     docName,
@@ -90,7 +96,11 @@ export function updateExtractionProgress(extractionId, taskInfo) {
     currentDocIndex,
     etaSeconds,
     knowledgeItems: knowledgeItems || [],
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    // 保留原有的docId/docIds，或使用新传入的值
+    docId: docId !== null ? docId : (existingTask?.docId || null),
+    docIds: docIds !== null ? docIds : (existingTask?.docIds || null),
+    knowledgeBaseId: knowledgeBaseId !== null ? knowledgeBaseId : (existingTask?.knowledgeBaseId || null)
   });
 
   renderProgressBar();
@@ -346,8 +356,15 @@ function createTaskCard(task) {
             </button>
           ` : status === 'failed' ? `
             <button
+              onclick="window.retryExtraction && window.retryExtraction('${extractionId}')"
+              class="px-2 py-1 text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+              title="重试提取"
+            >
+              <span>重试</span>
+            </button>
+            <button
               onclick="window.removeExtractionTask && window.removeExtractionTask('${extractionId}')"
-              class="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              class="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded transition-colors"
               title="关闭"
             >
               <i data-lucide="x" size="14"></i>
@@ -379,7 +396,61 @@ function cancelExtraction(extractionId) {
   removeExtractionTask(extractionId);
 }
 
+/**
+ * 重试提取任务
+ * @param {string} extractionId - 提取任务ID
+ */
+async function retryExtraction(extractionId) {
+  const progressTask = progressTasks.get(extractionId);
+  if (!progressTask) {
+    console.warn('找不到提取任务:', extractionId);
+    const { showToast } = await import('./toast.js');
+    showToast('找不到提取任务，请重新开始提取', 'error');
+    return;
+  }
+
+  try {
+    // 从knowledge-extraction模块获取任务信息（那里存储了docId/docIds）
+    const { getExtractionStatus } = await import('./knowledge-extraction.js');
+    const taskInfo = getExtractionStatus(extractionId);
+    
+    // 如果从extractionTasks中获取不到，尝试从progressTask中获取（可能存储了docId）
+    const docId = taskInfo?.docId || progressTask.docId;
+    const docIds = taskInfo?.docIds || progressTask.docIds;
+    const knowledgeBaseId = taskInfo?.knowledgeBaseId || progressTask.knowledgeBaseId;
+    const onProgress = taskInfo?.onProgress || progressTask.onProgress;
+    
+    if (!docId && !docIds) {
+      throw new Error('无法确定要提取的文档，请重新开始提取');
+    }
+
+    // 移除失败的任务
+    removeExtractionTask(extractionId);
+    
+    // 重新开始提取
+    const { extractFromDocument, extractFromDocuments } = await import('./knowledge-extraction.js');
+    const { showToast } = await import('./toast.js');
+    
+    showToast('正在重试提取...', 'info', 2000);
+    
+    if (docIds && Array.isArray(docIds)) {
+      // 批量提取
+      await extractFromDocuments(docIds, knowledgeBaseId, onProgress);
+    } else if (docId) {
+      // 单文档提取
+      await extractFromDocument(docId, knowledgeBaseId, onProgress);
+    } else {
+      throw new Error('无法确定要提取的文档');
+    }
+  } catch (error) {
+    console.error('重试提取失败:', error);
+    const { showToast } = await import('./toast.js');
+    showToast('重试失败: ' + (error.message || '未知错误'), 'error');
+  }
+}
+
 // 暴露全局函数
 window.removeExtractionTask = removeExtractionTask;
 window.cancelExtraction = cancelExtraction;
+window.retryExtraction = retryExtraction;
 

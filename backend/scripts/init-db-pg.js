@@ -33,22 +33,66 @@ async function initDatabase() {
         updated_at BIGINT NOT NULL,
         status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processed', 'archived')),
         knowledge_base_id TEXT,
-        module_id TEXT
+        module_id TEXT,
+        knowledge_extracted BOOLEAN DEFAULT FALSE
       )
     `);
     console.log('✓ source_items表已创建');
 
-    // 为source_items表添加可选字段（如果不存在）
+    // 为source_items表添加可选字段（使用健壮的检查方法）
+    console.log('检查并添加可选字段...');
+    const optionalFields = [
+      { name: 'file_path', def: 'TEXT' },
+      { name: 'page_count', def: 'INTEGER' },
+      { name: 'page_content', def: 'TEXT' },
+      { name: 'knowledge_base_id', def: 'TEXT' },
+      { name: 'module_id', def: 'TEXT' },
+      { name: 'metadata', def: 'TEXT' },
+      { name: 'knowledge_extracted', def: 'BOOLEAN DEFAULT FALSE' }
+    ];
+
+    for (const field of optionalFields) {
+      try {
+        const check = await client.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'source_items'
+          AND column_name = $1
+        `, [field.name]);
+        
+        if (check.rows.length === 0) {
+          await client.query(`ALTER TABLE source_items ADD COLUMN ${field.name} ${field.def}`);
+          console.log(`   ✓ ${field.name} 字段已添加`);
+        } else {
+          console.log(`   ✓ ${field.name} 字段已存在，跳过`);
+        }
+      } catch (err) {
+        console.warn(`   ⚠️  添加 ${field.name} 字段时出现警告:`, err.message);
+      }
+    }
+
+    // 初始化 knowledge_extracted 字段：标记已有知识点的文档为已提取
     try {
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS file_path TEXT`);
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS page_count INTEGER`);
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS page_content TEXT`);
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS knowledge_base_id TEXT`);
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS module_id TEXT`);
-      await client.query(`ALTER TABLE source_items ADD COLUMN IF NOT EXISTS metadata TEXT`);
+      const updateResult = await client.query(`
+        UPDATE source_items
+        SET knowledge_extracted = TRUE
+        WHERE id IN (
+          SELECT DISTINCT source_item_id 
+          FROM personal_knowledge_items 
+          WHERE source_item_id IS NOT NULL
+        )
+        AND (knowledge_extracted IS NULL OR knowledge_extracted = FALSE)
+      `);
+      
+      if (updateResult.rowCount > 0) {
+        console.log(`   ✓ 已将 ${updateResult.rowCount} 个已有知识点的文档标记为已提取`);
+      }
     } catch (err) {
-      // 字段可能已存在，忽略错误
-      console.warn('添加字段时出现警告（可忽略）:', err.message);
+      // personal_knowledge_items 表可能不存在，忽略错误
+      if (!err.message.includes('does not exist') && !err.message.includes('relation') && !err.message.includes('不存在')) {
+        console.warn('   初始化 knowledge_extracted 字段时出现警告:', err.message);
+      }
     }
 
     // tags 表
@@ -183,6 +227,8 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_title ON source_items(title)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_type_status ON source_items(type, status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_items_updated_at ON source_items(updated_at DESC)`);
+    // knowledge_extracted 字段索引（用于筛选优化）
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_source_items_knowledge_extracted ON source_items(knowledge_extracted)`);
     
     // personal_knowledge_items 表索引
     await client.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_items_knowledge_base_id ON personal_knowledge_items(knowledge_base_id)`);
