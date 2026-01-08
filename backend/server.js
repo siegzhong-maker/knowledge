@@ -325,6 +325,159 @@ app.get('/api/diagnose/files', async (req, res) => {
   }
 });
 
+// 提取功能诊断端点（用于Railway环境排查提取问题）
+app.get('/api/diagnose/extraction', async (req, res) => {
+  try {
+    const { getApiKey, testConnection } = require('./services/ai');
+    const db = require('./services/db');
+    
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      environment: {
+        NODE_ENV: process.env.NODE_ENV || '未设置',
+        DATABASE_URL: process.env.DATABASE_URL ? '已设置' : '未设置',
+        DB_TYPE: process.env.DB_TYPE || '未设置',
+        isPostgreSQL: !!(process.env.DATABASE_URL || process.env.DB_TYPE === 'postgres'),
+        isRailway: !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
+      },
+      apiKey: {
+        configured: false,
+        valid: false,
+        source: null,
+        error: null,
+        testResult: null
+      },
+      database: {
+        connected: false,
+        tablesExist: false,
+        knowledgeItemsTable: false,
+        recentKnowledgeItems: 0,
+        error: null
+      },
+      recommendations: []
+    };
+    
+    // 检查API Key配置
+    try {
+      const apiKey = await getApiKey();
+      diagnostics.apiKey.configured = !!apiKey;
+      diagnostics.apiKey.source = 'database';
+      
+      if (apiKey) {
+        // 测试API Key是否有效
+        try {
+          const testResult = await testConnection(apiKey);
+          diagnostics.apiKey.valid = testResult.success;
+          diagnostics.apiKey.testResult = testResult.message;
+          
+          if (!testResult.success) {
+            diagnostics.recommendations.push('⚠️ API Key已配置但无效，请检查API Key是否正确或已过期');
+          }
+        } catch (testError) {
+          diagnostics.apiKey.error = testError.message;
+          diagnostics.recommendations.push('❌ API Key测试失败：' + testError.message);
+        }
+      } else {
+        diagnostics.recommendations.push('❌ 未配置DeepSeek API Key。请在前端设置中配置个人API Key，或在数据库中添加全局API Key');
+      }
+    } catch (keyError) {
+      diagnostics.apiKey.error = keyError.message;
+      diagnostics.recommendations.push('❌ API Key检查失败：' + keyError.message);
+    }
+    
+    // 检查数据库连接和表结构
+    try {
+      // 测试数据库连接
+      await db.get('SELECT 1');
+      diagnostics.database.connected = true;
+      
+      // 检查personal_knowledge_items表是否存在
+      try {
+        const isPostgreSQL = !!(process.env.DATABASE_URL || process.env.DB_TYPE === 'postgres');
+        
+        if (isPostgreSQL) {
+          const tableCheck = await db.get(`
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_name = 'personal_knowledge_items'
+            )
+          `);
+          diagnostics.database.knowledgeItemsTable = tableCheck?.exists || false;
+        } else {
+          // SQLite
+          const tableCheck = await db.get(`
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='personal_knowledge_items'
+          `);
+          diagnostics.database.knowledgeItemsTable = !!tableCheck;
+        }
+        
+        diagnostics.database.tablesExist = diagnostics.database.knowledgeItemsTable;
+        
+        if (!diagnostics.database.knowledgeItemsTable) {
+          diagnostics.recommendations.push('❌ personal_knowledge_items表不存在。请在Railway上运行数据库初始化脚本：npm run init-db');
+        }
+        
+        // 检查最近的知识点记录
+        if (diagnostics.database.knowledgeItemsTable) {
+          try {
+            const recentItems = await db.all(
+              'SELECT COUNT(*) as count FROM personal_knowledge_items WHERE created_at > ?',
+              [Date.now() - 24 * 60 * 60 * 1000] // 最近24小时
+            );
+            diagnostics.database.recentKnowledgeItems = recentItems[0]?.count || 0;
+          } catch (countError) {
+            // 忽略计数错误
+          }
+        }
+      } catch (tableError) {
+        diagnostics.database.error = '表检查失败: ' + tableError.message;
+      }
+    } catch (dbError) {
+      diagnostics.database.error = '数据库连接失败: ' + dbError.message;
+      diagnostics.recommendations.push('❌ 数据库连接失败。请检查Railway PostgreSQL服务是否正常运行');
+    }
+    
+    // 添加针对性的修复建议
+    if (!diagnostics.apiKey.configured) {
+      diagnostics.recommendations.push('💡 修复方法：在前端设置中配置个人DeepSeek API Key（推荐），或使用setup-api-key.js脚本在数据库中添加全局API Key');
+    }
+    
+    if (diagnostics.apiKey.configured && !diagnostics.apiKey.valid) {
+      diagnostics.recommendations.push('💡 修复方法：检查API Key是否正确，确认API Key未过期，确认有足够的配额');
+    }
+    
+    if (!diagnostics.database.connected) {
+      diagnostics.recommendations.push('💡 修复方法：检查Railway PostgreSQL服务状态，确认DATABASE_URL环境变量已正确设置');
+    }
+    
+    if (diagnostics.database.connected && !diagnostics.database.tablesExist) {
+      diagnostics.recommendations.push('💡 修复方法：在Railway服务终端中运行：npm run init-db 或 node backend/scripts/init-db-pg.js');
+    }
+    
+    // 如果所有检查都通过，添加成功提示
+    if (diagnostics.apiKey.configured && 
+        diagnostics.apiKey.valid && 
+        diagnostics.database.connected && 
+        diagnostics.database.tablesExist) {
+      diagnostics.recommendations.push('✅ 所有检查通过！如果仍然无法提取，请查看Railway日志中的[提取]和[保存]相关错误信息');
+    }
+    
+    res.json({
+      success: true,
+      data: diagnostics
+    });
+  } catch (error) {
+    console.error('提取诊断失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '提取诊断失败',
+      error: error.stack
+    });
+  }
+});
+
 // 404处理 - API路由未找到（必须在所有API路由之后）
 app.use('/api/*', (req, res) => {
   // 记录未匹配的路由，用于调试

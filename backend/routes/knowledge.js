@@ -183,7 +183,11 @@ router.post('/extract', async (req, res) => {
         extractedCount: result.extractedCount,
         knowledgeItemIds: result.knowledgeItemIds || [],
         knowledgeItemIdsLength: result.knowledgeItemIds ? result.knowledgeItemIds.length : 0,
-        knowledgeItemsLength: result.knowledgeItems ? result.knowledgeItems.length : 0
+        knowledgeItemsLength: result.knowledgeItems ? result.knowledgeItems.length : 0,
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          isRailway: !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
+        }
       });
       
       // 获取当前任务状态（可能包含进度更新中的 knowledgeItemIds）
@@ -220,7 +224,19 @@ router.post('/extract', async (req, res) => {
           extractedCount: result.extractedCount,
           knowledgeItemsLength: finalKnowledgeItems.length,
           resultKnowledgeItemIds: result.knowledgeItemIds?.length || 0,
-          currentTaskKnowledgeItemIds: currentTask?.knowledgeItemIds?.length || 0
+          currentTaskKnowledgeItemIds: currentTask?.knowledgeItemIds?.length || 0,
+          possibleCauses: [
+            'AI未返回知识点数据',
+            '知识点保存失败',
+            'ID收集逻辑有问题',
+            '数据库插入失败但未抛出错误'
+          ],
+          recommendations: [
+            '检查Railway日志中的[提取]和[保存]相关错误',
+            '访问 /api/diagnose/extraction 查看详细诊断信息',
+            '确认API Key已正确配置',
+            '确认数据库表结构正确'
+          ]
         });
       } else {
         console.log('[后端] ✅ 提取完成，已保存知识点ID', {
@@ -230,18 +246,43 @@ router.post('/extract', async (req, res) => {
         });
       }
     }).catch(error => {
-      console.error('[后端] ❌ 提取任务失败', {
+      // 增强错误日志，特别针对Railway环境
+      const errorDetails = {
         extractionId,
         error: error.message,
         errorStack: error.stack,
-        errorName: error.name
-      });
+        errorName: error.name,
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          isRailway: !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID),
+          hasDatabaseUrl: !!process.env.DATABASE_URL
+        },
+        possibleCauses: {
+          apiKey: error.message.includes('API Key') ? 'API Key未配置或无效' : null,
+          network: error.message.includes('网络') || error.message.includes('timeout') ? '网络连接问题' : null,
+          database: error.message.includes('数据库') || error.message.includes('table') ? '数据库问题' : null,
+          ai: error.message.includes('AI') || error.message.includes('DeepSeek') ? 'AI调用失败' : null
+        },
+        recommendations: [
+          '查看Railway日志获取详细错误信息',
+          '访问 /api/diagnose/extraction 进行诊断',
+          '检查API Key配置',
+          '检查数据库连接和表结构'
+        ]
+      };
+      
+      console.error('[后端] ❌ 提取任务失败', errorDetails);
+      
       extractionTasks.set(extractionId, {
         status: 'failed',
         error: error.message,
         stage: 'failed',
         knowledgeItemIds: [],
-        knowledgeItems: []
+        knowledgeItems: [],
+        errorDetails: {
+          name: error.name,
+          message: error.message
+        }
       });
     });
 

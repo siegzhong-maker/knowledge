@@ -72,12 +72,44 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
   ];
 
   try {
-    console.log('[提取] 调用 DeepSeek API', { sourceItemId, maxTokens: 4000 });
-    const response = await callDeepSeekAPI(messages, {
-      max_tokens: 4000,
-      temperature: 0.3,
-      userApiKey
+    console.log('[提取] 调用 DeepSeek API', { 
+      sourceItemId, 
+      maxTokens: 4000,
+      contentLength: content.length,
+      hasUserApiKey: !!userApiKey
     });
+    
+    let response;
+    try {
+      response = await callDeepSeekAPI(messages, {
+        max_tokens: 4000,
+        temperature: 0.3,
+        userApiKey
+      });
+    } catch (apiError) {
+      // 详细记录API调用错误
+      console.error('[提取] ❌ DeepSeek API调用失败', {
+        sourceItemId,
+        error: apiError.message,
+        errorName: apiError.name,
+        hasUserApiKey: !!userApiKey,
+        possibleCauses: {
+          apiKey: apiError.message.includes('API Key') ? 'API Key未配置或无效' : null,
+          network: apiError.message.includes('网络') || apiError.message.includes('timeout') ? '网络连接问题' : null,
+          rateLimit: apiError.message.includes('频率') || apiError.message.includes('429') ? 'API请求频率过高' : null
+        }
+      });
+      throw apiError; // 重新抛出，让上层处理
+    }
+    
+    if (!response || response.trim().length === 0) {
+      console.error('[提取] ❌ AI API返回空响应', {
+        sourceItemId,
+        responseType: typeof response,
+        responseLength: response ? response.length : 0
+      });
+      throw new Error('AI API返回空响应');
+    }
     
     console.log('[提取] AI API 调用成功', {
       sourceItemId,
@@ -250,7 +282,7 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       sourceItemId,
       responsePreview: response.substring(0, 500),
       responseLength: response.length,
-      fullResponse: response // 记录完整响应以便调试
+      fullResponse: response.substring(0, 2000) // 记录前2000字符以便调试
     });
     
     // 尝试从响应中提取更多信息
@@ -261,20 +293,43 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       });
     }
     
+    // 检查是否是API Key相关错误
+    if (response.includes('API Key') || response.includes('unauthorized') || response.includes('401')) {
+      console.error('[提取] ❌ 检测到API Key错误', {
+        sourceItemId,
+        responsePreview: response.substring(0, 500)
+      });
+      throw new Error('API Key无效或未配置，请检查设置');
+    }
+    
     return [];
   } catch (error) {
-    console.error('[提取] ❌ 知识提取失败', {
+    // 增强错误日志，特别针对Railway环境
+    const errorDetails = {
       sourceItemId,
       error: error.message,
       errorName: error.name,
       stack: error.stack,
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        hasDatabaseUrl: !!process.env.DATABASE_URL,
+        isRailway: !!process.env.RAILWAY_ENVIRONMENT || !!process.env.RAILWAY_PROJECT_ID
+      },
       possibleCauses: {
         apiKey: error.message.includes('API Key') || error.message.includes('未配置') ? 'API Key 未配置或无效' : null,
-        network: error.message.includes('fetch') || error.message.includes('network') ? '网络连接问题' : null,
+        network: error.message.includes('fetch') || error.message.includes('network') || error.message.includes('timeout') ? '网络连接问题（Railway可能无法访问api.deepseek.com）' : null,
         rateLimit: error.message.includes('429') || error.message.includes('频率') ? 'API 请求频率过高' : null,
         content: error.message.includes('内容') ? '文档内容问题' : null
       }
-    });
+    };
+    
+    console.error('[提取] ❌ 知识提取失败', errorDetails);
+    
+    // 如果是API Key问题，提供更明确的错误信息
+    if (error.message.includes('API Key')) {
+      throw new Error('知识提取失败：API Key未配置或无效。请在设置中配置DeepSeek API Key，或在前端设置中配置个人API Key。');
+    }
+    
     throw new Error(`知识提取失败: ${error.message}`);
   }
 }
@@ -459,7 +514,8 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
       title: knowledgeItem.title?.substring(0, 50)
     });
   } catch (dbError) {
-    console.error('[保存] ❌ 数据库插入失败', {
+    // 增强数据库错误日志，特别针对PostgreSQL和Railway环境
+    const errorDetails = {
       id,
       title: knowledgeItem.title?.substring(0, 50),
       error: dbError.message,
@@ -469,12 +525,32 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
       knowledgeBaseId,
       category,
       subcategory_id,
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        hasDatabaseUrl: !!process.env.DATABASE_URL,
+        isPostgreSQL: !!process.env.DATABASE_URL || process.env.DB_TYPE === 'postgres',
+        isRailway: !!process.env.RAILWAY_ENVIRONMENT || !!process.env.RAILWAY_PROJECT_ID
+      },
       // 记录可能导致错误的参数
       titleLength: knowledgeItem.title?.length,
       contentLength: knowledgeItem.content?.length,
       hasSummary: !!knowledgeItem.summary,
-      confidence: knowledgeItem.confidence
-    });
+      confidence: knowledgeItem.confidence,
+      possibleCauses: {
+        connection: dbError.message.includes('connection') || dbError.message.includes('ECONNREFUSED') ? '数据库连接失败（Railway PostgreSQL可能未启动）' : null,
+        tableMissing: dbError.message.includes('does not exist') || dbError.message.includes('no such table') ? '数据库表不存在（需要运行初始化脚本）' : null,
+        constraint: dbError.message.includes('constraint') || dbError.message.includes('UNIQUE') ? '数据库约束冲突' : null,
+        dataType: dbError.message.includes('type') || dbError.message.includes('format') ? '数据类型错误' : null
+      }
+    };
+    
+    console.error('[保存] ❌ 数据库插入失败', errorDetails);
+    
+    // 如果是表不存在错误，提供更明确的提示
+    if (dbError.message.includes('does not exist') || dbError.message.includes('no such table')) {
+      throw new Error(`保存知识点失败: 数据库表不存在。请在Railway上运行数据库初始化脚本。`);
+    }
+    
     throw new Error(`保存知识点失败: ${dbError.message}`);
   }
 

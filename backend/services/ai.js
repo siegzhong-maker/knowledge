@@ -38,8 +38,21 @@ async function getModel() {
  * @param {string} options.userApiKey - 用户提供的API Key（可选）
  */
 async function callDeepSeekAPI(messages, options = {}) {
-  const apiKey = await getApiKey(options.userApiKey);
-  const model = await getModel();
+  let apiKey;
+  let model;
+  
+  try {
+    apiKey = await getApiKey(options.userApiKey);
+    model = await getModel();
+  } catch (keyError) {
+    console.error('[AI] ❌ API Key获取失败', {
+      error: keyError.message,
+      hasUserApiKey: !!options.userApiKey,
+      userApiKeyPreview: options.userApiKey ? `${options.userApiKey.substring(0, 8)}...` : 'none',
+      stack: keyError.stack
+    });
+    throw keyError;
+  }
 
   const requestBody = {
     model: model,
@@ -49,38 +62,122 @@ async function callDeepSeekAPI(messages, options = {}) {
     stream: options.stream || false
   };
 
+  // 记录请求信息（不记录完整API Key）
+  console.log('[AI] 准备调用DeepSeek API', {
+    model,
+    messagesCount: messages.length,
+    maxTokens: requestBody.max_tokens,
+    temperature: requestBody.temperature,
+    hasApiKey: !!apiKey,
+    apiKeyPreview: apiKey ? `${apiKey.substring(0, 8)}...` : 'none',
+    hasUserApiKey: !!options.userApiKey
+  });
+
   try {
+    const startTime = Date.now();
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      // 增加超时设置（Railway环境可能需要更长时间）
+      signal: AbortSignal.timeout(60000) // 60秒超时
     });
+
+    const duration = Date.now() - startTime;
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error?.message || `API请求失败: ${response.status}`;
+      
+      console.error('[AI] ❌ DeepSeek API调用失败', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorMessage,
+        errorData: errorData.error || errorData,
+        duration,
+        model,
+        messagesCount: messages.length
+      });
+      
       if (response.status === 401) {
         throw new Error('API Key无效，请检查配置');
       } else if (response.status === 429) {
         throw new Error('请求频率过高，请稍后重试');
       } else {
-        throw new Error(errorData.error?.message || `API请求失败: ${response.status}`);
+        throw new Error(errorMessage);
       }
     }
 
     if (options.stream) {
+      console.log('[AI] ✅ DeepSeek API调用成功（流式）', { duration, model });
       return response.body; // 返回流对象
     } else {
       const data = await response.json();
-      return data.choices[0].message.content;
+      const content = data.choices[0]?.message?.content;
+      
+      console.log('[AI] ✅ DeepSeek API调用成功', {
+        duration,
+        model,
+        contentLength: content ? content.length : 0,
+        tokensUsed: data.usage?.total_tokens || 'unknown'
+      });
+      
+      if (!content) {
+        console.error('[AI] ❌ API响应中没有content字段', {
+          responseData: JSON.stringify(data).substring(0, 500),
+          choices: data.choices
+        });
+        throw new Error('API响应格式错误：缺少content字段');
+      }
+      
+      return content;
     }
   } catch (error) {
-    if (error.message.includes('API Key')) {
+    // 增强错误日志
+    if (error.name === 'AbortError' || error.message.includes('timeout')) {
+      console.error('[AI] ❌ DeepSeek API调用超时', {
+        error: error.message,
+        model,
+        messagesCount: messages.length,
+        possibleCauses: [
+          '网络连接问题',
+          'Railway服务网络限制',
+          'API服务响应慢',
+          '请求内容过大'
+        ]
+      });
+      throw new Error('API调用超时，请检查网络连接或稍后重试');
+    } else if (error.message.includes('fetch failed') || error.message.includes('network')) {
+      console.error('[AI] ❌ DeepSeek API网络连接失败', {
+        error: error.message,
+        model,
+        possibleCauses: [
+          'Railway服务无法访问api.deepseek.com',
+          '网络防火墙限制',
+          'DNS解析失败'
+        ]
+      });
+      throw new Error('无法连接到DeepSeek API，请检查网络连接');
+    } else if (error.message.includes('API Key')) {
+      console.error('[AI] ❌ API Key相关错误', {
+        error: error.message,
+        hasApiKey: !!apiKey,
+        apiKeyPreview: apiKey ? `${apiKey.substring(0, 8)}...` : 'none'
+      });
       throw error;
+    } else {
+      console.error('[AI] ❌ DeepSeek API调用失败', {
+        error: error.message,
+        errorName: error.name,
+        stack: error.stack,
+        model,
+        messagesCount: messages.length
+      });
+      throw new Error(`调用DeepSeek API失败: ${error.message}`);
     }
-    throw new Error(`调用DeepSeek API失败: ${error.message}`);
   }
 }
 
@@ -544,6 +641,7 @@ module.exports = {
   extractCitations,
   analyzeDocument,
   matchDocument,
-  generateWelcomeMessage
+  generateWelcomeMessage,
+  getApiKey
 };
 
