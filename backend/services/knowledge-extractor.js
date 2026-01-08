@@ -11,7 +11,16 @@ const { v4: uuidv4 } = require('uuid');
  * @returns {Promise<Array>} 提取的知识点数组
  */
 async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = null, userApiKey = null) {
+  console.log('[提取] extractKnowledgeFromContent 开始', {
+    sourceItemId,
+    sourcePage,
+    contentLength: content ? content.length : 0,
+    hasUserApiKey: !!userApiKey,
+    userApiKeyPreview: userApiKey ? `${userApiKey.substring(0, 8)}...` : 'none'
+  });
+  
   if (!content || content.trim().length === 0) {
+    console.warn('[提取] ⚠️ 内容为空，返回空数组', { sourceItemId });
     return [];
   }
 
@@ -20,6 +29,13 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
   const contentSample = content.length > maxLength 
     ? content.substring(0, maxLength) + '\n\n[内容已截断...]'
     : content;
+
+  console.log('[提取] 准备调用AI API', {
+    sourceItemId,
+    contentLength: content.length,
+    sampleLength: contentSample.length,
+    isTruncated: content.length > maxLength
+  });
 
   const messages = [
     {
@@ -56,22 +72,44 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
   ];
 
   try {
+    console.log('[提取] 调用 DeepSeek API', { sourceItemId, maxTokens: 4000 });
     const response = await callDeepSeekAPI(messages, {
       max_tokens: 4000,
       temperature: 0.3,
       userApiKey
+    });
+    
+    console.log('[提取] AI API 调用成功', {
+      sourceItemId,
+      responseLength: response ? response.length : 0,
+      responsePreview: response ? response.substring(0, 200) : 'null'
     });
 
     // 尝试解析JSON响应
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       let jsonString = jsonMatch[0];
+      console.log('[提取] 找到JSON数组', {
+        sourceItemId,
+        jsonStringLength: jsonString.length,
+        jsonPreview: jsonString.substring(0, 300)
+      });
       
       // 尝试解析JSON，如果失败则尝试修复
       let knowledgeItems;
       try {
         knowledgeItems = JSON.parse(jsonString);
+        console.log('[提取] ✅ JSON解析成功', {
+          sourceItemId,
+          knowledgeItemsCount: Array.isArray(knowledgeItems) ? knowledgeItems.length : 0,
+          isArray: Array.isArray(knowledgeItems)
+        });
       } catch (parseError) {
+        console.warn('[提取] ⚠️ 首次JSON解析失败，尝试修复', {
+          sourceItemId,
+          error: parseError.message,
+          jsonStringLength: jsonString.length
+        });
         // 如果解析失败，尝试修复常见的JSON问题
         try {
           // 方法1：清理字符串值外的控制字符（在JSON结构中的换行、制表等）
@@ -147,13 +185,16 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
               
               knowledgeItems = JSON.parse(cleanedJson);
             } catch (finalError) {
-              console.error('JSON解析失败，原始响应（前1000字符）:', response.substring(0, 1000));
-              console.error('提取的JSON字符串（前1000字符）:', jsonString.substring(0, 1000));
-              console.error('所有解析错误:', {
-                first: parseError.message,
-                second: secondError.message,
-                third: thirdError.message,
-                final: finalError.message
+              console.error('[提取] ❌ JSON解析完全失败', {
+                sourceItemId,
+                originalResponsePreview: response.substring(0, 1000),
+                jsonStringPreview: jsonString.substring(0, 1000),
+                errors: {
+                  first: parseError.message,
+                  second: secondError.message,
+                  third: thirdError.message,
+                  final: finalError.message
+                }
               });
               // 返回空数组而不是抛出错误，让提取流程继续
               return [];
@@ -163,26 +204,77 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       }
       
       // 验证和清洗数据
-      return knowledgeItems
-        .filter(item => item.title && item.content)
-        .map(item => ({
-          title: item.title.trim(),
-          content: item.content.trim(),
-          summary: item.summary ? item.summary.trim() : null,
-          keyConclusions: Array.isArray(item.keyConclusions) ? item.keyConclusions : [],
-          confidence: Math.min(Math.max(item.confidence || 70, 0), 100),
-          tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : [],
-          sourceExcerpt: item.sourceExcerpt ? item.sourceExcerpt.trim() : null,
+      if (!Array.isArray(knowledgeItems)) {
+        console.error('[提取] ❌ 解析结果不是数组', {
           sourceItemId,
-          sourcePage
-        }));
+          knowledgeItemsType: typeof knowledgeItems,
+          knowledgeItems
+        });
+        return [];
+      }
+      
+      const beforeFilter = knowledgeItems.length;
+      const filtered = knowledgeItems.filter(item => item.title && item.content);
+      const afterFilter = filtered.length;
+      
+      console.log('[提取] 数据验证和清洗', {
+        sourceItemId,
+        beforeFilter,
+        afterFilter,
+        filteredOut: beforeFilter - afterFilter
+      });
+      
+      const cleaned = filtered.map(item => ({
+        title: item.title.trim(),
+        content: item.content.trim(),
+        summary: item.summary ? item.summary.trim() : null,
+        keyConclusions: Array.isArray(item.keyConclusions) ? item.keyConclusions : [],
+        confidence: Math.min(Math.max(item.confidence || 70, 0), 100),
+        tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : [],
+        sourceExcerpt: item.sourceExcerpt ? item.sourceExcerpt.trim() : null,
+        sourceItemId,
+        sourcePage
+      }));
+      
+      console.log('[提取] ✅ 提取完成', {
+        sourceItemId,
+        extractedCount: cleaned.length,
+        sampleTitles: cleaned.slice(0, 3).map(item => item.title)
+      });
+      
+      return cleaned;
     }
 
     // 如果解析失败，返回空数组
-    console.warn('知识提取响应解析失败:', response.substring(0, 200));
+    console.warn('[提取] ⚠️ 响应中没有找到JSON数组', {
+      sourceItemId,
+      responsePreview: response.substring(0, 500),
+      responseLength: response.length,
+      fullResponse: response // 记录完整响应以便调试
+    });
+    
+    // 尝试从响应中提取更多信息
+    if (response.includes('错误') || response.includes('error') || response.includes('Error')) {
+      console.error('[提取] ❌ AI 返回了错误信息', {
+        sourceItemId,
+        errorMessage: response.substring(0, 1000)
+      });
+    }
+    
     return [];
   } catch (error) {
-    console.error('知识提取失败:', error);
+    console.error('[提取] ❌ 知识提取失败', {
+      sourceItemId,
+      error: error.message,
+      errorName: error.name,
+      stack: error.stack,
+      possibleCauses: {
+        apiKey: error.message.includes('API Key') || error.message.includes('未配置') ? 'API Key 未配置或无效' : null,
+        network: error.message.includes('fetch') || error.message.includes('network') ? '网络连接问题' : null,
+        rateLimit: error.message.includes('429') || error.message.includes('频率') ? 'API 请求频率过高' : null,
+        content: error.message.includes('内容') ? '文档内容问题' : null
+      }
+    });
     throw new Error(`知识提取失败: ${error.message}`);
   }
 }
@@ -196,6 +288,27 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
 async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
   const id = `ki-${uuidv4().split('-')[0]}`;
   const now = Date.now();
+  
+  console.log('[保存] 开始保存知识点', {
+    id,
+    title: knowledgeItem.title?.substring(0, 50),
+    knowledgeBaseId,
+    hasTitle: !!knowledgeItem.title,
+    hasContent: !!knowledgeItem.content,
+    contentLength: knowledgeItem.content?.length || 0
+  });
+  
+  // 验证数据完整性
+  if (!knowledgeItem.title || !knowledgeItem.content) {
+    const error = new Error('知识点数据不完整：缺少title或content');
+    console.error('[保存] ❌ 数据验证失败', {
+      id,
+      hasTitle: !!knowledgeItem.title,
+      hasContent: !!knowledgeItem.content,
+      knowledgeItem
+    });
+    throw error;
+  }
   
   // 所有提取的知识点都需要人工确认，不自动确认
   // 但根据置信度标记不同级别的提示信息
@@ -302,13 +415,8 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
     }
   }
 
-  await db.run(
-    `INSERT INTO personal_knowledge_items 
-     (id, title, content, summary, key_conclusions, source_item_id, source_page, 
-      source_excerpt, confidence_score, status, category, subcategory_id, tags, knowledge_base_id, 
-      created_at, updated_at, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
+  try {
+    const insertParams = [
       id,
       knowledgeItem.title,
       knowledgeItem.content,
@@ -326,12 +434,58 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
       now,
       now,
       JSON.stringify(metadata)
-    ]
-  );
+    ];
+    
+    console.log('[保存] 准备插入数据库', {
+      id,
+      title: knowledgeItem.title?.substring(0, 50),
+      knowledgeBaseId,
+      category,
+      subcategory_id,
+      paramsCount: insertParams.length
+    });
+    
+    await db.run(
+      `INSERT INTO personal_knowledge_items 
+       (id, title, content, summary, key_conclusions, source_item_id, source_page, 
+        source_excerpt, confidence_score, status, category, subcategory_id, tags, knowledge_base_id, 
+        created_at, updated_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      insertParams
+    );
+    
+    console.log('[保存] ✅ 数据库插入成功', {
+      id,
+      title: knowledgeItem.title?.substring(0, 50)
+    });
+  } catch (dbError) {
+    console.error('[保存] ❌ 数据库插入失败', {
+      id,
+      title: knowledgeItem.title?.substring(0, 50),
+      error: dbError.message,
+      errorCode: dbError.code,
+      errorName: dbError.name,
+      stack: dbError.stack,
+      knowledgeBaseId,
+      category,
+      subcategory_id,
+      // 记录可能导致错误的参数
+      titleLength: knowledgeItem.title?.length,
+      contentLength: knowledgeItem.content?.length,
+      hasSummary: !!knowledgeItem.summary,
+      confidence: knowledgeItem.confidence
+    });
+    throw new Error(`保存知识点失败: ${dbError.message}`);
+  }
 
   // 如果知识点有关联的文档，标记文档为已提取
   if (knowledgeItem.sourceItemId) {
     try {
+      console.log('[保存] 标记文档为已提取', {
+        knowledgeItemId: id,
+        sourceItemId: knowledgeItem.sourceItemId
+      });
+      
       // 使用兼容SQLite和PostgreSQL的语法
       // SQLite使用INTEGER，PostgreSQL使用BOOLEAN，但在db层会自动转换
       const DATABASE_URL = process.env.DATABASE_URL;
@@ -349,12 +503,27 @@ async function saveKnowledgeItem(knowledgeItem, knowledgeBaseId) {
           [now, knowledgeItem.sourceItemId]
         );
       }
+      
+      console.log('[保存] ✅ 文档标记成功', {
+        knowledgeItemId: id,
+        sourceItemId: knowledgeItem.sourceItemId
+      });
     } catch (error) {
       // 如果字段不存在或更新失败，只记录警告，不影响知识点保存
-      console.warn('标记文档为已提取失败:', error.message);
+      console.warn('[保存] ⚠️ 标记文档为已提取失败', {
+        knowledgeItemId: id,
+        sourceItemId: knowledgeItem.sourceItemId,
+        error: error.message,
+        errorCode: error.code
+      });
     }
   }
 
+  console.log('[保存] ✅ 知识点保存完成', {
+    id,
+    title: knowledgeItem.title?.substring(0, 50)
+  });
+  
   return id;
 }
 
@@ -570,7 +739,8 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
     extractedCount: 0,
     currentDocIndex: 0,
     progress: 5,
-    knowledgeItems: []
+    knowledgeItems: [],
+    knowledgeItemIds: []
   });
 
   for (let i = 0; i < itemIds.length; i++) {
@@ -593,7 +763,8 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
         extractedCount: results.extractedCount,
         currentDocIndex,
         progress: totalProgress,
-        knowledgeItems: results.knowledgeItems.slice(-5)
+        knowledgeItems: results.knowledgeItems.slice(-5),
+        knowledgeItemIds: results.knowledgeItemIds
       });
 
       // 获取文档内容
@@ -635,16 +806,57 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
         extractedCount: results.extractedCount,
         currentDocIndex,
         progress: extractingTotalProgress,
-        knowledgeItems: results.knowledgeItems.slice(-5)
+        knowledgeItems: results.knowledgeItems.slice(-5),
+        knowledgeItemIds: results.knowledgeItemIds
       });
 
       // 提取知识点
+      console.log('[提取] 开始从文档提取知识点', {
+        extractionId,
+        itemId,
+        contentLength: content.length
+      });
+      
       const knowledgeItems = await extractKnowledgeFromContent(
         content,
         itemId,
         null,
         options.userApiKey
       );
+      
+      console.log('[提取] 知识点提取完成', {
+        extractionId,
+        itemId,
+        extractedCount: knowledgeItems.length,
+        knowledgeItems: knowledgeItems.map(ki => ({
+          title: ki.title?.substring(0, 50),
+          confidence: ki.confidence,
+          tagsCount: ki.tags?.length || 0
+        }))
+      });
+      
+      if (knowledgeItems.length === 0) {
+        console.warn('[提取] ⚠️ 未提取到任何知识点', {
+          extractionId,
+          itemId,
+          contentLength: content.length,
+          contentPreview: content.substring(0, 500),
+          possibleReasons: [
+            '文档内容可能太短或质量不高',
+            'AI 返回的格式不正确',
+            'API Key 可能无效或配额已用完',
+            '文档内容可能不包含可提取的知识点'
+          ]
+        });
+        
+        // 检查内容是否太短
+        if (content.length < 100) {
+          console.warn('[提取] ⚠️ 文档内容过短，可能无法提取知识点', {
+            itemId,
+            contentLength: content.length
+          });
+        }
+      }
 
       // 阶段3: 生成摘要
       const summarizingStageProgress = 0.5; // 摘要生成中
@@ -665,21 +877,119 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
           id: null, // 尚未保存，ID为null
           title: ki.title,
           content: ki.content.substring(0, 100) + '...'
-        }))
+        })),
+        knowledgeItemIds: results.knowledgeItemIds
       });
 
       // 批量保存知识点（优化：减少数据库操作和进度更新频率）
       const BATCH_SIZE = 5; // 每批保存 5 个知识点
       const PROGRESS_UPDATE_INTERVAL = 3; // 每保存 3 个知识点更新一次进度
       
+      console.log('[提取] 开始批量保存知识点', {
+        extractionId,
+        itemId,
+        knowledgeItemsCount: knowledgeItems.length,
+        batchSize: BATCH_SIZE
+      });
+      
       for (let j = 0; j < knowledgeItems.length; j += BATCH_SIZE) {
         const batch = knowledgeItems.slice(j, j + BATCH_SIZE);
+        console.log('[提取] 处理批次', {
+          extractionId,
+          itemId,
+          batchIndex: Math.floor(j / BATCH_SIZE) + 1,
+          batchSize: batch.length,
+          batchTitles: batch.map(ki => ki.title?.substring(0, 30))
+        });
         
-        // 批量保存知识点
-        const batchPromises = batch.map(knowledgeItem => 
-          saveKnowledgeItem(knowledgeItem, knowledgeBaseId)
-        );
-        const savedIds = await Promise.all(batchPromises);
+        // 批量保存知识点 - 使用 Promise.allSettled 避免一个失败导致全部失败
+        const batchPromises = batch.map((knowledgeItem, index) => {
+          // 验证知识点数据完整性
+          const validationErrors = [];
+          if (!knowledgeItem.title || knowledgeItem.title.trim().length === 0) {
+            validationErrors.push('title为空');
+          }
+          if (!knowledgeItem.content || knowledgeItem.content.trim().length === 0) {
+            validationErrors.push('content为空');
+          }
+          if (validationErrors.length > 0) {
+            console.error('[提取] ❌ 知识点数据验证失败', {
+              extractionId,
+              itemId,
+              index,
+              errors: validationErrors,
+              knowledgeItem: {
+                hasTitle: !!knowledgeItem.title,
+                titleLength: knowledgeItem.title?.length,
+                hasContent: !!knowledgeItem.content,
+                contentLength: knowledgeItem.content?.length
+              }
+            });
+            return Promise.resolve({ 
+              success: false, 
+              error: `数据验证失败: ${validationErrors.join(', ')}`, 
+              index, 
+              knowledgeItem: { title: knowledgeItem.title?.substring(0, 50) }
+            });
+          }
+          
+          return saveKnowledgeItem(knowledgeItem, knowledgeBaseId)
+            .then(id => ({ success: true, id, index, knowledgeItem }))
+            .catch(error => ({ 
+              success: false, 
+              error: error.message, 
+              index, 
+              knowledgeItem: { title: knowledgeItem.title?.substring(0, 50) }
+            }));
+        });
+        
+        const saveResults = await Promise.allSettled(batchPromises);
+        
+        // 收集成功保存的ID和失败的记录
+        const savedIds = [];
+        const failedItems = [];
+        
+        saveResults.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            const itemResult = result.value;
+            if (itemResult.success) {
+              savedIds.push(itemResult.id);
+              console.log('[提取] ✅ 知识点保存成功', {
+                extractionId,
+                itemId,
+                knowledgeItemId: itemResult.id,
+                title: itemResult.knowledgeItem.title?.substring(0, 50)
+              });
+            } else {
+              failedItems.push(itemResult);
+              console.error('[提取] ❌ 知识点保存失败', {
+                extractionId,
+                itemId,
+                index: itemResult.index,
+                error: itemResult.error,
+                title: itemResult.knowledgeItem.title
+              });
+            }
+          } else {
+            failedItems.push({ index, error: result.reason?.message || 'Unknown error' });
+            console.error('[提取] ❌ Promise rejected', {
+              extractionId,
+              itemId,
+              index,
+              error: result.reason
+            });
+          }
+        });
+        
+        console.log('[提取] 批次保存结果', {
+          extractionId,
+          itemId,
+          batchIndex: Math.floor(j / BATCH_SIZE) + 1,
+          total: batch.length,
+          success: savedIds.length,
+          failed: failedItems.length,
+          savedIds: savedIds.slice(0, 5) // 只显示前5个
+        });
         
         // 批量获取保存的知识点详情（减少数据库查询）
         if (savedIds.length > 0) {
@@ -689,9 +999,26 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
             savedIds
           );
           
+          console.log('[提取] 从数据库获取保存的知识点', {
+            extractionId,
+            itemId,
+            requestedIds: savedIds.length,
+            foundItems: savedItems.length,
+            foundIds: savedItems.map(item => item.id)
+          });
+          
           // 添加到结果
           savedIds.forEach(id => results.knowledgeItemIds.push(id));
           results.extractedCount += savedIds.length;
+          
+          console.log('[提取] 更新结果中的 knowledgeItemIds', {
+            extractionId,
+            itemId,
+            batchIndex: Math.floor(j / BATCH_SIZE) + 1,
+            savedIdsCount: savedIds.length,
+            totalKnowledgeItemIdsCount: results.knowledgeItemIds.length,
+            extractedCount: results.extractedCount
+          });
           
           savedItems.forEach(item => {
             results.knowledgeItems.push({
@@ -699,6 +1026,13 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
               title: item.title,
               content: item.content.substring(0, 100) + '...'
             });
+          });
+        } else {
+          console.warn('[提取] ⚠️ 批次中没有成功保存的知识点', {
+            extractionId,
+            itemId,
+            batchIndex: Math.floor(j / BATCH_SIZE) + 1,
+            failedCount: failedItems.length
           });
         }
         
@@ -723,6 +1057,15 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
             progressHistory.shift();
           }
           
+          console.log('[提取] 更新进度：保存阶段', {
+            extractionId,
+            itemId,
+            stage: 'saving',
+            progress: savingTotalProgress,
+            knowledgeItemIdsCount: results.knowledgeItemIds.length,
+            extractedCount: results.extractedCount
+          });
+          
           updateProgress({
             extractionId,
             stage: 'saving',
@@ -731,7 +1074,8 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
             extractedCount: results.extractedCount,
             currentDocIndex,
             progress: savingTotalProgress,
-            knowledgeItems: results.knowledgeItems.slice(-5)
+            knowledgeItems: results.knowledgeItems.slice(-5),
+            knowledgeItemIds: results.knowledgeItemIds
           });
         }
       }
@@ -754,10 +1098,20 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
           extractedCount: results.extractedCount,
           currentDocIndex: results.processedItems + 1,
           progress: nextDocTotalProgress,
-          knowledgeItems: results.knowledgeItems.slice(-5)
+          knowledgeItems: results.knowledgeItems.slice(-5),
+          knowledgeItemIds: results.knowledgeItemIds
         });
       } else {
         // 所有文档处理完成
+        console.log('[提取] 所有文档处理完成，最终更新进度', {
+          extractionId,
+          processedItems: results.processedItems,
+          totalItems: itemIds.length,
+          extractedCount: results.extractedCount,
+          knowledgeItemIdsCount: results.knowledgeItemIds.length,
+          knowledgeItemsCount: results.knowledgeItems.length
+        });
+        
         updateProgress({
           extractionId,
           stage: 'saving',
@@ -766,11 +1120,22 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
           extractedCount: results.extractedCount,
           currentDocIndex: results.processedItems,
           progress: 100,
-          knowledgeItems: results.knowledgeItems.slice(-5)
+          knowledgeItems: results.knowledgeItems.slice(-5),
+          knowledgeItemIds: results.knowledgeItemIds
         });
       }
     } catch (error) {
-      console.error(`提取文档 ${itemId} 失败:`, error);
+      console.error('[提取] ❌ 提取文档失败', {
+        extractionId,
+        itemId,
+        error: error.message,
+        errorStack: error.stack,
+        errorName: error.name,
+        processedItems: results.processedItems,
+        totalItems: itemIds.length,
+        extractedCount: results.extractedCount
+      });
+      
       results.processedItems++;
       
       // 即使失败也要更新进度
@@ -783,9 +1148,46 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
         extractedCount: results.extractedCount,
         currentDocIndex: results.processedItems,
         progress: Math.min(100, Math.round(errorBaseProgress)),
-        knowledgeItems: results.knowledgeItems.slice(-5)
+        knowledgeItems: results.knowledgeItems.slice(-5),
+        knowledgeItemIds: results.knowledgeItemIds
+      });
+      
+      // 继续处理下一个文档，不中断整个提取流程
+      console.log('[提取] 继续处理下一个文档', {
+        extractionId,
+        nextItemIndex: results.processedItems,
+        remainingItems: itemIds.length - results.processedItems
       });
     }
+  }
+
+  console.log('[提取] extractFromDocuments 完成', {
+    extractionId,
+    totalItems: results.totalItems,
+    processedItems: results.processedItems,
+    extractedCount: results.extractedCount,
+    knowledgeItemIds: results.knowledgeItemIds,
+    knowledgeItemIdsLength: results.knowledgeItemIds.length,
+    knowledgeItemsLength: results.knowledgeItems.length,
+    knowledgeItemIdsSample: results.knowledgeItemIds.slice(0, 5) // 显示前5个ID作为样本
+  });
+  
+  // 验证最终结果
+  if (results.knowledgeItemIds.length === 0 && results.extractedCount > 0) {
+    console.error('[提取] ❌ 警告：extractedCount > 0 但 knowledgeItemIds 为空', {
+      extractionId,
+      extractedCount: results.extractedCount,
+      knowledgeItemsLength: results.knowledgeItems.length
+    });
+  }
+  
+  if (results.knowledgeItemIds.length === 0) {
+    console.warn('[提取] ⚠️ 最终结果：没有保存任何知识点ID', {
+      extractionId,
+      totalItems: results.totalItems,
+      processedItems: results.processedItems,
+      extractedCount: results.extractedCount
+    });
   }
 
   return results;

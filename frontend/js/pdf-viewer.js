@@ -43,7 +43,7 @@ export async function initPDFViewer(pdfUrl, container, options = {}) {
     // 显示加载状态
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center py-20">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
+        <div class="animate-spin rounded-full w-12 h-12 border-2 border-indigo-500 border-t-transparent mb-4"></div>
         <p class="text-sm text-slate-500">正在加载PDF...</p>
       </div>
     `;

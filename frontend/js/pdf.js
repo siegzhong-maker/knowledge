@@ -181,7 +181,7 @@ export async function renderPDFContent(pdfData, container) {
       container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-20">
           <div class="relative">
-            <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-200 border-t-indigo-600 mb-6"></div>
+            <div class="animate-spin rounded-full w-16 h-16 border-4 border-indigo-500 border-t-transparent mb-6"></div>
             <i data-lucide="file-text" size="24" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-indigo-600"></i>
           </div>
           <p class="text-sm font-medium text-slate-700 mb-2">正在加载PDF...</p>
@@ -276,7 +276,7 @@ export async function renderPDFContent(pdfData, container) {
           ` : ''}
           ${showTextFallback ? `
             <div class="flex items-center gap-2 text-xs text-slate-400">
-              <i data-lucide="loader-2" size="14" class="animate-spin"></i>
+              <i data-lucide="loader-2" size="14" class="animate-spin text-indigo-600"></i>
               <span>正在尝试显示文本内容...</span>
             </div>
           ` : ''}

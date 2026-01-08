@@ -60,7 +60,7 @@ export async function initKnowledgeGraph(containerId) {
   // 显示加载状态
   container.innerHTML = `
     <div class="flex flex-col items-center justify-center h-full text-slate-400">
-      <i data-lucide="loader-2" class="animate-spin mb-3" size="32"></i>
+      <i data-lucide="loader-2" class="animate-spin mb-3 text-indigo-600" size="32"></i>
       <p>正在加载知识图谱...</p>
     </div>
   `;

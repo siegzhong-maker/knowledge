@@ -64,6 +64,14 @@ function calculateETA(progressHistory, currentProgress, startTime) {
 router.post('/extract', async (req, res) => {
   try {
     const { itemIds, knowledgeBaseId, extractionOptions = {}, userApiKey } = req.body;
+    
+    // 调试：记录 API Key 状态
+    console.log('[提取API] 接收提取请求', {
+      itemIdsCount: itemIds?.length || 0,
+      knowledgeBaseId,
+      hasUserApiKey: !!userApiKey,
+      userApiKeyPreview: userApiKey ? `${userApiKey.substring(0, 8)}...` : 'none'
+    });
 
     if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
       return res.status(400).json({
@@ -116,9 +124,19 @@ router.post('/extract', async (req, res) => {
     const updateProgress = (progress) => {
       const currentTask = extractionTasks.get(extractionId);
       if (currentTask) {
+        // 确保 knowledgeItemIds 被正确合并（如果 progress 中有新的，使用新的；否则保留旧的）
+        const mergedKnowledgeItemIds = progress.knowledgeItemIds !== undefined
+          ? progress.knowledgeItemIds
+          : (currentTask.knowledgeItemIds || []);
+        const mergedKnowledgeItems = progress.knowledgeItems !== undefined
+          ? progress.knowledgeItems
+          : (currentTask.knowledgeItems || []);
+        
         const updatedTask = {
           ...currentTask,
           ...progress,
+          knowledgeItemIds: mergedKnowledgeItemIds,
+          knowledgeItems: mergedKnowledgeItems,
           status: 'processing'
         };
         
@@ -135,6 +153,18 @@ router.post('/extract', async (req, res) => {
           }
         }
         
+        // 调试日志：只在 knowledgeItemIds 发生变化时记录
+        if (progress.knowledgeItemIds !== undefined && 
+            JSON.stringify(mergedKnowledgeItemIds) !== JSON.stringify(currentTask.knowledgeItemIds || [])) {
+          console.log('[后端] 进度更新：knowledgeItemIds 已更新', {
+            extractionId,
+            stage: progress.stage,
+            oldCount: (currentTask.knowledgeItemIds || []).length,
+            newCount: mergedKnowledgeItemIds.length,
+            extractedCount: progress.extractedCount || currentTask.extractedCount
+          });
+        }
+        
         extractionTasks.set(extractionId, updatedTask);
       }
     };
@@ -146,17 +176,72 @@ router.post('/extract', async (req, res) => {
       updateProgress,
       ...extractionOptions
     }).then(result => {
+      console.log('[后端] 提取任务完成', {
+        extractionId,
+        totalItems: result.totalItems,
+        processedItems: result.processedItems,
+        extractedCount: result.extractedCount,
+        knowledgeItemIds: result.knowledgeItemIds || [],
+        knowledgeItemIdsLength: result.knowledgeItemIds ? result.knowledgeItemIds.length : 0,
+        knowledgeItemsLength: result.knowledgeItems ? result.knowledgeItems.length : 0
+      });
+      
+      // 获取当前任务状态（可能包含进度更新中的 knowledgeItemIds）
+      const currentTask = extractionTasks.get(extractionId);
+      const finalKnowledgeItemIds = result.knowledgeItemIds && result.knowledgeItemIds.length > 0
+        ? result.knowledgeItemIds
+        : (currentTask?.knowledgeItemIds || []);
+      const finalKnowledgeItems = result.knowledgeItems && result.knowledgeItems.length > 0
+        ? result.knowledgeItems
+        : (currentTask?.knowledgeItems || []);
+      
+      console.log('[后端] 最终合并任务状态', {
+        extractionId,
+        resultKnowledgeItemIds: result.knowledgeItemIds?.length || 0,
+        currentTaskKnowledgeItemIds: currentTask?.knowledgeItemIds?.length || 0,
+        finalKnowledgeItemIds: finalKnowledgeItemIds.length,
+        resultKnowledgeItems: result.knowledgeItems?.length || 0,
+        currentTaskKnowledgeItems: currentTask?.knowledgeItems?.length || 0,
+        finalKnowledgeItems: finalKnowledgeItems.length
+      });
+      
       extractionTasks.set(extractionId, {
         ...result,
+        knowledgeItemIds: finalKnowledgeItemIds,
+        knowledgeItems: finalKnowledgeItems,
         status: 'completed',
         stage: 'completed'
       });
+      
+      // 验证结果
+      if (!finalKnowledgeItemIds || finalKnowledgeItemIds.length === 0) {
+        console.warn('[后端] ⚠️ 提取完成但没有知识点ID', {
+          extractionId,
+          extractedCount: result.extractedCount,
+          knowledgeItemsLength: finalKnowledgeItems.length,
+          resultKnowledgeItemIds: result.knowledgeItemIds?.length || 0,
+          currentTaskKnowledgeItemIds: currentTask?.knowledgeItemIds?.length || 0
+        });
+      } else {
+        console.log('[后端] ✅ 提取完成，已保存知识点ID', {
+          extractionId,
+          knowledgeItemIdsCount: finalKnowledgeItemIds.length,
+          extractedCount: result.extractedCount
+        });
+      }
     }).catch(error => {
-      console.error('提取任务失败:', error);
+      console.error('[后端] ❌ 提取任务失败', {
+        extractionId,
+        error: error.message,
+        errorStack: error.stack,
+        errorName: error.name
+      });
       extractionTasks.set(extractionId, {
         status: 'failed',
         error: error.message,
-        stage: 'failed'
+        stage: 'failed',
+        knowledgeItemIds: [],
+        knowledgeItems: []
       });
     });
 
