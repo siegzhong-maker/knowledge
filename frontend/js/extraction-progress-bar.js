@@ -186,8 +186,8 @@ function renderStageProgress(currentStage, status = 'processing') {
           stageClass = 'text-green-600';
           iconClass = 'check-circle';
         } else if (index === currentStageIndex) {
-          // 当前阶段：蓝色实心圆 + 动画
-          stageClass = 'text-blue-600';
+          // 当前阶段：indigo实心圆 + 动画
+          stageClass = 'text-indigo-600';
           iconClass = status === 'processing' ? 'loader-2 animate-spin' : 'circle';
         } else {
           // 未开始阶段：灰色空心圆
@@ -201,7 +201,7 @@ function renderStageProgress(currentStage, status = 'processing') {
           if (isCompleted || index < currentStageIndex) {
             lineClass = 'bg-green-500';
           } else if (index === currentStageIndex && status === 'processing') {
-            lineClass = 'bg-blue-500';
+            lineClass = 'bg-indigo-500';
           } else {
             lineClass = 'bg-slate-200';
           }
@@ -248,7 +248,7 @@ function createTaskCard(task) {
   if (status === 'processing') {
     statusIcon = '<i data-lucide="loader-2" class="animate-spin" size="16"></i>';
     statusText = '提取中';
-    statusColor = 'text-blue-600';
+    statusColor = 'text-indigo-600';
   } else if (status === 'completed') {
     statusIcon = '<i data-lucide="check-circle" size="16"></i>';
     statusText = '提取完成';
@@ -323,7 +323,7 @@ function createTaskCard(task) {
           <!-- 进度信息 -->
           <div class="flex items-center justify-between mt-2">
             <div class="text-xs text-slate-600 font-medium">${progressText}</div>
-            ${status === 'processing' ? `<div class="text-xs font-semibold text-blue-600">${Math.min(100, Math.max(0, progress))}%</div>` : ''}
+            ${status === 'processing' ? `<div class="text-xs font-semibold text-indigo-600">${Math.min(100, Math.max(0, progress))}%</div>` : ''}
           </div>
           
           ${previewSection}
@@ -341,7 +341,7 @@ function createTaskCard(task) {
             </button>
           ` : status === 'completed' ? `
             <button
-              onclick="window.switchView && window.switchView('knowledge-items')"
+              onclick="(async () => { if (window.switchView) { window.switchView('knowledge-items'); } const { refreshKnowledgeView } = await import('./js/knowledge-items.js'); refreshKnowledgeView(); })()"
               class="px-2 py-1 text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors"
               title="查看本次新提取"
             >
@@ -357,7 +357,7 @@ function createTaskCard(task) {
           ` : status === 'failed' ? `
             <button
               onclick="window.retryExtraction && window.retryExtraction('${extractionId}')"
-              class="px-2 py-1 text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+              class="px-2 py-1 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
               title="重试提取"
             >
               <span>重试</span>

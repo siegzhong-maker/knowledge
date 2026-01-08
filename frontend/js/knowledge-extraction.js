@@ -233,6 +233,22 @@ async function pollExtractionStatus(extractionId) {
 
         if (latestIds && latestIds.length > 0 && typeof window !== 'undefined' && window.localStorage) {
           window.localStorage.setItem('latestExtractionHighlightIds', JSON.stringify(latestIds));
+          console.log('[提取] 已保存本次提取高亮ID:', latestIds.length, '个');
+          
+          // 如果当前在知识库视图，主动刷新高亮显示
+          try {
+            const knowledgeView = document.getElementById('view-knowledge-items');
+            if (knowledgeView && !knowledgeView.classList.contains('hidden')) {
+              // 当前在知识库视图，主动刷新
+              import('./knowledge-items.js').then(({ refreshKnowledgeView }) => {
+                refreshKnowledgeView();
+              }).catch(e => {
+                console.warn('刷新知识库视图失败:', e);
+              });
+            }
+          } catch (e) {
+            console.warn('检查知识库视图状态失败:', e);
+          }
         }
       } catch (e) {
         console.warn('保存本次提取高亮ID失败:', e);
@@ -358,7 +374,7 @@ export function handleExtractionProgress(docId, progress) {
   if (statusElement) {
     if (progress.status === 'processing') {
       statusElement.innerHTML = `
-        <div class="flex items-center space-x-2 text-blue-600">
+        <div class="flex items-center space-x-2 text-indigo-600">
           <i data-lucide="loader-2" class="animate-spin" size="16"></i>
           <span class="text-sm font-medium">AI 提取中... ${progress.progress}%</span>
         </div>

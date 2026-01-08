@@ -271,7 +271,7 @@ function switchView(view) {
     if (typeof lucide !== 'undefined') {
       lucide.createIcons(elViewKnowledgeItems);
     }
-    // 初始化文档库视图
+    // 初始化知识库视图
     import('./knowledge-items.js').then(({ initKnowledgeView, handleFilterChange, handleSearch }) => {
       initKnowledgeView();
       // 绑定筛选和搜索事件

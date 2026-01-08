@@ -29,6 +29,9 @@ const knowledgeState = {
   viewMode: 'grid' // 'grid' | 'timeline'
 };
 
+// 监听器绑定标志，防止重复绑定
+let knowledgeBaseChangedListenerBound = false;
+
 /**
  * 更新状态并重新渲染
  */
@@ -1030,25 +1033,51 @@ function initSearch() {
 }
 
 /**
- * 初始化知识库视图
+ * 刷新本次提取的高亮ID（从 localStorage 读取）
+ * @returns {boolean} 是否有新的高亮ID
  */
-export async function initKnowledgeView() {
-  // 从 localStorage 中读取本次提取需要高亮的知识点ID
+export function refreshHighlightIds() {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const stored = window.localStorage.getItem('latestExtractionHighlightIds');
       if (stored) {
         const ids = JSON.parse(stored);
-        if (Array.isArray(ids)) {
+        if (Array.isArray(ids) && ids.length > 0) {
           knowledgeState.highlightIds = ids;
+          console.log('[知识库] 读取到本次提取高亮ID:', ids.length, '个');
+          return true; // 表示有新的高亮ID
         }
-        // 读取一次后清除，避免旧的高亮长期残留
-        window.localStorage.removeItem('latestExtractionHighlightIds');
       }
     }
   } catch (e) {
     console.warn('读取本次提取高亮ID失败:', e);
   }
+  return false; // 没有新的高亮ID
+}
+
+/**
+ * 刷新知识库视图（用于提取完成后更新显示）
+ */
+export async function refreshKnowledgeView() {
+  const hasNewIds = refreshHighlightIds();
+  if (hasNewIds) {
+    // 重新加载知识列表并渲染
+    await loadKnowledgeItems();
+  } else {
+    // 即使没有新的高亮ID，也重新渲染一次（以防数据有更新）
+    renderKnowledgeView();
+  }
+}
+
+/**
+ * 初始化知识库视图
+ */
+export async function initKnowledgeView() {
+  // 从 localStorage 中读取本次提取需要高亮的知识点ID
+  refreshHighlightIds();
+  
+  // 注意：不清除 localStorage 中的 highlightIds，让用户可以在提取完成后查看
+  // 只有在用户主动清除高亮或切换知识库时才清除
 
   await loadKnowledgeItems();
   
@@ -1067,39 +1096,55 @@ export async function initKnowledgeView() {
   // 渲染分类筛选（数据加载完成后）
   renderCategoryFilters();
 
-  // 监听知识库切换事件，重新加载知识列表
-  document.addEventListener('knowledgeBaseChanged', async (event) => {
-    console.log('[知识库] 知识库已切换，重新加载知识列表');
-    // 重置筛选和搜索状态，避免沿用上一个知识库的条件造成空列表误判
-    knowledgeState.currentPage = 1;
-    knowledgeState.currentFilter = 'all';
-    knowledgeState.currentCategoryFilter = 'all';
-    knowledgeState.searchQuery = '';
-    
-    // 重置筛选按钮和搜索输入框的UI状态
-    try {
-      const filterContainer = document.getElementById('knowledge-status-filters');
-      if (filterContainer) {
-        filterContainer.querySelectorAll('.knowledge-filter-btn').forEach(btn => {
-          const isAll = btn.dataset.filter === 'all';
-          btn.classList.toggle('bg-slate-800', isAll);
-          btn.classList.toggle('text-white', isAll);
-          btn.classList.toggle('bg-white', !isAll);
-          btn.classList.toggle('text-slate-600', !isAll);
-          btn.classList.toggle('border', !isAll);
-          btn.classList.toggle('border-slate-200', !isAll);
-        });
+  // 监听知识库切换事件，重新加载知识列表（只绑定一次，防止重复刷新）
+  if (!knowledgeBaseChangedListenerBound) {
+    const handleKnowledgeBaseChanged = async (event) => {
+      console.log('[知识库] 知识库已切换，重新加载知识列表');
+      // 重置筛选和搜索状态，避免沿用上一个知识库的条件造成空列表误判
+      knowledgeState.currentPage = 1;
+      knowledgeState.currentFilter = 'all';
+      knowledgeState.currentCategoryFilter = 'all';
+      knowledgeState.searchQuery = '';
+      
+      // 清除本次提取的高亮ID（切换知识库后，之前的提取结果不再相关）
+      knowledgeState.highlightIds = [];
+      knowledgeState.highlightFilterActive = false;
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.removeItem('latestExtractionHighlightIds');
+        }
+      } catch (e) {
+        console.warn('[知识库] 清除高亮ID失败:', e);
       }
-      const searchInput = document.getElementById('knowledge-search-input');
-      if (searchInput) {
-        searchInput.value = '';
+      
+      // 重置筛选按钮和搜索输入框的UI状态
+      try {
+        const filterContainer = document.getElementById('knowledge-status-filters');
+        if (filterContainer) {
+          filterContainer.querySelectorAll('.knowledge-filter-btn').forEach(btn => {
+            const isAll = btn.dataset.filter === 'all';
+            btn.classList.toggle('bg-slate-800', isAll);
+            btn.classList.toggle('text-white', isAll);
+            btn.classList.toggle('bg-white', !isAll);
+            btn.classList.toggle('text-slate-600', !isAll);
+            btn.classList.toggle('border', !isAll);
+            btn.classList.toggle('border-slate-200', !isAll);
+          });
+        }
+        const searchInput = document.getElementById('knowledge-search-input');
+        if (searchInput) {
+          searchInput.value = '';
+        }
+      } catch (e) {
+        console.warn('[知识库] 重置筛选/搜索状态时出现问题:', e);
       }
-    } catch (e) {
-      console.warn('[知识库] 重置筛选/搜索状态时出现问题:', e);
-    }
+      
+      await loadKnowledgeItems();
+    };
     
-    await loadKnowledgeItems();
-  });
+    document.addEventListener('knowledgeBaseChanged', handleKnowledgeBaseChanged);
+    knowledgeBaseChangedListenerBound = true;
+  }
 }
 
 /**
