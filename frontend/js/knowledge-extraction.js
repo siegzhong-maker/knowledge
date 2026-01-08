@@ -223,35 +223,67 @@ async function pollExtractionStatus(extractionId) {
       // 提取完成
       // 收集本次提取产生的知识点ID，用于在知识列表中高亮显示
       try {
-        const latestIdsFromApi = Array.isArray(knowledgeItemIds) ? knowledgeItemIds : null;
+        console.log('[提取] 提取完成，开始收集知识点ID', {
+          knowledgeItemIds,
+          knowledgeItemIdsType: Array.isArray(knowledgeItemIds) ? 'array' : typeof knowledgeItemIds,
+          knowledgeItemIdsLength: Array.isArray(knowledgeItemIds) ? knowledgeItemIds.length : 0,
+          knowledgeItems,
+          knowledgeItemsType: Array.isArray(knowledgeItems) ? 'array' : typeof knowledgeItems,
+          knowledgeItemsLength: Array.isArray(knowledgeItems) ? knowledgeItems.length : 0
+        });
+        
+        const latestIdsFromApi = Array.isArray(knowledgeItemIds) && knowledgeItemIds.length > 0 
+          ? knowledgeItemIds 
+          : null;
         const latestIdsFromItems = (!latestIdsFromApi || latestIdsFromApi.length === 0)
-          ? (Array.isArray(knowledgeItems) ? knowledgeItems.map(item => item.id).filter(Boolean) : [])
+          ? (Array.isArray(knowledgeItems) && knowledgeItems.length > 0
+              ? knowledgeItems.map(item => item.id).filter(Boolean)
+              : [])
           : [];
+        
         const latestIds = latestIdsFromApi && latestIdsFromApi.length > 0
           ? latestIdsFromApi
           : latestIdsFromItems;
 
+        console.log('[提取] 收集到的知识点ID', {
+          latestIdsFromApi,
+          latestIdsFromItems,
+          latestIds,
+          latestIdsLength: latestIds ? latestIds.length : 0
+        });
+
         if (latestIds && latestIds.length > 0 && typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem('latestExtractionHighlightIds', JSON.stringify(latestIds));
-          console.log('[提取] 已保存本次提取高亮ID:', latestIds.length, '个');
+          // 统一转换为字符串，确保类型一致
+          const idsAsStrings = latestIds.map(id => String(id));
+          window.localStorage.setItem('latestExtractionHighlightIds', JSON.stringify(idsAsStrings));
+          console.log('[提取] 已保存本次提取高亮ID到 localStorage:', idsAsStrings.length, '个', idsAsStrings);
           
           // 如果当前在知识库视图，主动刷新高亮显示
           try {
             const knowledgeView = document.getElementById('view-knowledge-items');
             if (knowledgeView && !knowledgeView.classList.contains('hidden')) {
+              console.log('[提取] 当前在知识库视图，主动刷新显示');
               // 当前在知识库视图，主动刷新
               import('./knowledge-items.js').then(({ refreshKnowledgeView }) => {
                 refreshKnowledgeView();
               }).catch(e => {
                 console.warn('刷新知识库视图失败:', e);
               });
+            } else {
+              console.log('[提取] 当前不在知识库视图，用户切换到知识库视图时会自动显示');
             }
           } catch (e) {
             console.warn('检查知识库视图状态失败:', e);
           }
+        } else {
+          console.warn('[提取] 没有找到知识点ID，无法保存高亮信息', {
+            latestIds,
+            latestIdsLength: latestIds ? latestIds.length : 0,
+            hasLocalStorage: typeof window !== 'undefined' && window.localStorage
+          });
         }
       } catch (e) {
-        console.warn('保存本次提取高亮ID失败:', e);
+        console.error('保存本次提取高亮ID失败:', e);
       }
 
       updateExtractionProgress(extractionId, {

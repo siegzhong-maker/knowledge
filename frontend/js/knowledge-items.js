@@ -125,6 +125,16 @@ export async function loadKnowledgeItems(filters = {}) {
     knowledgeState.hasMore = hasMore;
     knowledgeState.loading = false;
 
+    // 调试：记录知识列表的 ID
+    if (data && data.length > 0) {
+      const itemIds = data.map(item => String(item.id));
+      console.log('[知识库] 加载的知识列表ID:', itemIds);
+      if (knowledgeState.highlightIds.length > 0) {
+        const matchedIds = itemIds.filter(id => knowledgeState.highlightIds.includes(id));
+        console.log('[知识库] 匹配的高亮ID:', matchedIds, '总高亮ID:', knowledgeState.highlightIds);
+      }
+    }
+
     applyFilters();
     renderKnowledgeView();
     
@@ -214,8 +224,9 @@ function applyFilters() {
 
   // 本次新提取筛选（K2）
   if (knowledgeState.highlightFilterActive && knowledgeState.highlightIds.length > 0) {
-    const highlightSet = new Set(knowledgeState.highlightIds);
-    filtered = filtered.filter(item => highlightSet.has(item.id));
+    // 确保类型一致：将 highlightIds 和 item.id 都转换为字符串
+    const highlightSet = new Set(knowledgeState.highlightIds.map(id => String(id)));
+    filtered = filtered.filter(item => highlightSet.has(String(item.id)));
 
     // 如果过滤后没有任何卡片，自动退出高亮过滤，恢复全部
     if (filtered.length === 0) {
@@ -478,6 +489,15 @@ export function renderKnowledgeView() {
     return;
   }
   
+  // 调试：记录渲染时的状态
+  console.log('[知识库] 开始渲染知识视图', {
+    highlightIds: knowledgeState.highlightIds,
+    highlightIdsCount: knowledgeState.highlightIds.length,
+    highlightFilterActive: knowledgeState.highlightFilterActive,
+    itemsCount: knowledgeState.items.length,
+    filteredItemsCount: knowledgeState.filteredItems.length
+  });
+  
   // 性能监控
   const perfMonitor = window.performanceMonitor;
   const timer = perfMonitor ? perfMonitor.start('render-knowledge-view', { 
@@ -664,28 +684,42 @@ export function renderKnowledgeView() {
     if (knowledgeState.highlightFilterActive) {
       // 当只显示本次新提取时，直接使用 filteredItems（已经过滤过了）
       latestItems = [...knowledgeState.filteredItems];
-      // 按照highlightIds的顺序排序
+      // 按照highlightIds的顺序排序（确保类型一致）
       if (highlightIds.length > 0) {
-        const orderMap = new Map(highlightIds.map((id, index) => [id, index]));
+        const orderMap = new Map(highlightIds.map((id, index) => [String(id), index]));
         latestItems.sort((a, b) => {
-          const orderA = orderMap.get(a.id) ?? 0;
-          const orderB = orderMap.get(b.id) ?? 0;
+          const orderA = orderMap.get(String(a.id)) ?? 0;
+          const orderB = orderMap.get(String(b.id)) ?? 0;
           return orderA - orderB;
         });
       }
       otherItems = []; // 不显示其他项目
     } else if (highlightIds.length > 0) {
       // 正常模式：分离出本次新提取和其他项目
+      // 确保 highlightIds 和 item.id 都是字符串类型进行比较
       const highlightSet = new Set(highlightIds);
-      latestItems = knowledgeState.filteredItems.filter(item => highlightSet.has(item.id));
-      otherItems = knowledgeState.filteredItems.filter(item => !highlightSet.has(item.id));
+      latestItems = knowledgeState.filteredItems.filter(item => {
+        const itemId = String(item.id);
+        return highlightSet.has(itemId);
+      });
+      otherItems = knowledgeState.filteredItems.filter(item => {
+        const itemId = String(item.id);
+        return !highlightSet.has(itemId);
+      });
 
       // 按照highlightIds的顺序排序最新列表
-      const orderMap = new Map(highlightIds.map((id, index) => [id, index]));
+      const orderMap = new Map(highlightIds.map((id, index) => [String(id), index]));
       latestItems.sort((a, b) => {
-        const orderA = orderMap.get(a.id) ?? 0;
-        const orderB = orderMap.get(b.id) ?? 0;
+        const orderA = orderMap.get(String(a.id)) ?? 0;
+        const orderB = orderMap.get(String(b.id)) ?? 0;
         return orderA - orderB;
+      });
+      
+      console.log('[知识库] 本次新提取区域:', {
+        highlightIds,
+        latestItemsCount: latestItems.length,
+        latestItemIds: latestItems.map(item => String(item.id)),
+        otherItemsCount: otherItems.length
       });
     }
 
@@ -1043,8 +1077,9 @@ export function refreshHighlightIds() {
       if (stored) {
         const ids = JSON.parse(stored);
         if (Array.isArray(ids) && ids.length > 0) {
-          knowledgeState.highlightIds = ids;
-          console.log('[知识库] 读取到本次提取高亮ID:', ids.length, '个');
+          // 统一将 ID 转换为字符串，确保类型一致
+          knowledgeState.highlightIds = ids.map(id => String(id));
+          console.log('[知识库] 读取到本次提取高亮ID:', knowledgeState.highlightIds.length, '个', knowledgeState.highlightIds);
           return true; // 表示有新的高亮ID
         }
       }
@@ -1059,11 +1094,22 @@ export function refreshHighlightIds() {
  * 刷新知识库视图（用于提取完成后更新显示）
  */
 export async function refreshKnowledgeView() {
+  console.log('[知识库] 开始刷新知识库视图');
+  
+  // 先读取 highlightIds（确保在加载知识列表之前设置）
   const hasNewIds = refreshHighlightIds();
+  
   if (hasNewIds) {
-    // 重新加载知识列表并渲染
+    console.log('[知识库] 检测到新的高亮ID，重新加载知识列表');
+    // 重新加载知识列表并渲染（loadKnowledgeItems 会调用 applyFilters 和 renderKnowledgeView）
     await loadKnowledgeItems();
+    
+    // 确保 highlightIds 已正确应用到筛选
+    console.log('[知识库] 知识列表加载完成，当前 highlightIds:', knowledgeState.highlightIds);
+    console.log('[知识库] 当前知识列表项数:', knowledgeState.items.length);
+    console.log('[知识库] 筛选后项数:', knowledgeState.filteredItems.length);
   } else {
+    console.log('[知识库] 没有新的高亮ID，仅重新渲染视图');
     // 即使没有新的高亮ID，也重新渲染一次（以防数据有更新）
     renderKnowledgeView();
   }
@@ -1073,8 +1119,13 @@ export async function refreshKnowledgeView() {
  * 初始化知识库视图
  */
 export async function initKnowledgeView() {
+  console.log('[知识库] 初始化知识库视图');
+  
   // 从 localStorage 中读取本次提取需要高亮的知识点ID
-  refreshHighlightIds();
+  const hasHighlightIds = refreshHighlightIds();
+  if (hasHighlightIds) {
+    console.log('[知识库] 初始化时发现高亮ID:', knowledgeState.highlightIds);
+  }
   
   // 注意：不清除 localStorage 中的 highlightIds，让用户可以在提取完成后查看
   // 只有在用户主动清除高亮或切换知识库时才清除
