@@ -1,5 +1,6 @@
 // 模块管理模块
 import { consultationAPI } from './api.js';
+import { showAlert } from './dialog.js';
 
 // 模块状态管理
 export const moduleState = {
@@ -924,7 +925,10 @@ export async function showModuleSwitcher() {
       const modules = moduleState.groupedModules || [];
       
       if (modules.length === 0) {
-        alert('模块系统未初始化');
+        await showAlert('模块系统未初始化', {
+          type: 'warning',
+          title: '系统未初始化'
+        });
         return;
       }
       

@@ -1,5 +1,6 @@
 // 知识库管理模块
 import { consultationAPI } from './api.js';
+import { showAlert } from './dialog.js';
 
 // 知识库状态管理
 export const knowledgeBaseState = {
@@ -927,11 +928,14 @@ window.showCreateKnowledgeBaseModal = async function() {
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         const data = JSON.parse(e.target.result);
         if (!data.steps || !Array.isArray(data.steps)) {
-          alert('JSON格式错误：缺少steps数组');
+          await showAlert('JSON格式错误：缺少steps数组', {
+            type: 'error',
+            title: '格式错误'
+          });
           return;
         }
         
@@ -957,7 +961,10 @@ window.showCreateKnowledgeBaseModal = async function() {
           lucide.createIcons(modal);
         }
       } catch (error) {
-        alert('JSON解析失败：' + error.message);
+        await showAlert('JSON解析失败：' + error.message, {
+          type: 'error',
+          title: '解析失败'
+        });
       }
     };
     reader.readAsText(file);
@@ -1108,7 +1115,10 @@ window.showCreateKnowledgeBaseModal = async function() {
       }
       
       if (!wizardState.basicInfo.name) {
-        alert('请输入知识库名称');
+        await showAlert('请输入知识库名称', {
+          type: 'warning',
+          title: '输入无效'
+        });
         return;
       }
       
@@ -1120,12 +1130,18 @@ window.showCreateKnowledgeBaseModal = async function() {
     } else if (wizardState.step === 2) {
       // 验证模块结构
       if (!wizardState.importMethod) {
-        alert('请选择模块结构定义方式');
+        await showAlert('请选择模块结构定义方式', {
+          type: 'warning',
+          title: '请完成设置'
+        });
         return;
       }
       
       if (wizardState.modules.length === 0) {
-        alert('请至少定义一个模块');
+        await showAlert('请至少定义一个模块', {
+          type: 'warning',
+          title: '请完成设置'
+        });
         return;
       }
       
@@ -1168,7 +1184,10 @@ window.showCreateKnowledgeBaseModal = async function() {
           lucide.createIcons(modal);
         }
       } catch (error) {
-        alert('创建失败：' + error.message);
+        await showAlert('创建失败：' + error.message, {
+          type: 'error',
+          title: '创建失败'
+        });
         console.error('创建知识库失败:', error);
       }
     } else if (wizardState.step === 3) {

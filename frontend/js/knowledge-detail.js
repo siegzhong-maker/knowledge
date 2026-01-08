@@ -2,6 +2,7 @@
 import { knowledgeAPI } from './api.js';
 import { showToast, showLoadingToast } from './toast.js';
 import { formatTime } from './utils.js';
+import { showConfirm } from './dialog.js';
 
 let currentItem = null;
 let isEditMode = false;
@@ -222,8 +223,9 @@ async function loadRelatedKnowledgeAsync(itemId) {
 function renderContent() {
   if (!currentItem) return '';
 
-  // 待审核提醒
-  const pendingAlert = currentItem.status === 'pending' ? `
+  // 待审核提醒（仅当置信度低于80%时显示）
+  const confidence = currentItem.confidence_score || 0;
+  const pendingAlert = currentItem.status === 'pending' && confidence < 80 ? `
     <div class="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-start gap-4">
       <i data-lucide="alert-circle" class="text-amber-600 flex-shrink-0 mt-0.5" size="22"></i>
       <div class="flex-1 min-w-0">
@@ -696,8 +698,13 @@ async function approveKnowledgeItem(itemId) {
  * 删除知识点
  */
 async function deleteKnowledgeItem(itemId) {
-  if (!confirm('确定要删除这个知识点吗？')) {
-    return;
+  try {
+    await showConfirm('确定要删除这个知识点吗？', {
+      title: '确认删除',
+      type: 'warning'
+    });
+  } catch {
+    return; // 用户取消
   }
 
   const loadingToast = showLoadingToast('删除中...');

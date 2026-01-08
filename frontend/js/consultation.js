@@ -5,6 +5,7 @@ import { settingsAPI } from './api.js';
 import { getCurrentContext, formatContextLabel, getValidContext } from './context.js';
 import { renderPDFContent, highlightPage, scrollToQuote, getPDFContent, highlightTextInPDF } from './pdf.js';
 import { showToast } from './toast.js';
+import { showConfirm, showAlert, showPrompt } from './dialog.js';
 
 // 左侧边栏宽度调整功能
 let isResizingLeftSidebar = false;
@@ -110,7 +111,9 @@ const state = {
   branches: [], // 分支列表 [{ branchId, version, branchPoint, messages, docIds, knowledgeBaseIds, createdAt }]
   currentBranchId: null, // 当前显示的分支ID
   currentStep: null, // 当前对话已显示的步骤（用于去重步骤标签）
-  loadingDocId: null // 当前正在加载的文档ID（用于显示加载状态）
+  loadingDocId: null, // 当前正在加载的文档ID（用于显示加载状态）
+  pendingDocId: null, // 当前待加载的文档ID（用户最新点击的，用于取消之前的加载）
+  loadingAbortController: null // AbortController 用于取消正在进行的加载请求
 };
 
 // 标记智能问答是否已完成首次初始化（用于控制视图级 Loading）
@@ -671,7 +674,10 @@ function setupUploadButton() {
           console.warn('派发 pdfUploaded 事件失败:', e);
         }
         
-        alert('PDF 上传成功！文档已加入当前知识库，可在「文档库」管理，在「智能问答」中用于提问。');
+        await showAlert('PDF 上传成功！文档已加入当前知识库，可在「文档库」管理，在「智能问答」中用于提问。', {
+          type: 'success',
+          title: '上传成功'
+        });
         
         newUploadBtn.disabled = false;
         newUploadBtn.innerHTML = originalHtml;
@@ -681,7 +687,10 @@ function setupUploadButton() {
       } catch (error) {
         console.error('上传失败:', error);
         const errorMessage = error.message || '上传失败，请重试';
-        alert('上传失败: ' + errorMessage);
+        await showAlert('上传失败: ' + errorMessage, {
+          type: 'error',
+          title: '上传失败'
+        });
         newUploadBtn.disabled = false;
         newUploadBtn.innerHTML = originalHtml;
         if (typeof lucide !== 'undefined') {
@@ -1091,20 +1100,48 @@ export async function renderPDFList() {
           console.log('点击元素:', e.target);
           console.log('开始加载文档...');
           
+          // 取消之前的加载（如果有）
+          if (state.loadingAbortController) {
+            console.log('取消之前的PDF加载请求（用户点击了新文档）');
+            state.loadingAbortController.abort();
+            state.loadingAbortController = null;
+          }
+          
+          // 如果之前有加载中的文档，清除其加载状态
+          if (state.loadingDocId && state.loadingDocId !== docId) {
+            setDocumentLoading(state.loadingDocId, false);
+          }
+          
+          // 设置新的待加载文档ID（这会触发 loadDoc 中的取消检查）
+          state.pendingDocId = docId;
+          
           // 立即设置加载状态，禁用按钮并显示加载指示器
           setDocumentLoading(docId, true);
           
           // 确保loadDoc被调用
           loadDoc(docId, true)
             .then(() => {
-              // 加载成功，清除加载状态
-              setDocumentLoading(docId, false);
+              // 加载成功，清除加载状态（只有在当前文档还是这个时才清除）
+              if (state.currentDocId === docId && state.pendingDocId === docId) {
+                setDocumentLoading(docId, false);
+              }
             })
-            .catch(error => {
+            .catch(async (error) => {
+              // 如果是取消操作，不显示错误
+              if (error.name === 'AbortError' || state.pendingDocId !== docId) {
+                console.log('文档加载已取消（用户点击了其他文档）:', docId);
+                return;
+              }
+              
               // 加载失败，清除加载状态并显示错误
-              setDocumentLoading(docId, false);
+              if (state.currentDocId === docId) {
+                setDocumentLoading(docId, false);
+              }
               console.error('加载文档失败:', error);
-              alert('加载文档失败: ' + (error.message || '未知错误'));
+              await showAlert('加载文档失败: ' + (error.message || '未知错误'), {
+                type: 'error',
+                title: '加载失败'
+              });
             });
         });
       });
@@ -1207,7 +1244,7 @@ function renderDocConversationsList(conversations, docId) {
                 <div class="text-[11px] font-medium text-slate-700 truncate mb-0.5">${escapeHtml(preview)}</div>
                 <div class="text-[10px] text-slate-400">${timeStr}</div>
               </div>
-              <div class="flex items-center gap-1 flex-shrink-0">
+              <div class="flex items-center gap-1.5 flex-shrink-0">
                 <button 
                   onclick="event.stopPropagation(); continueConversation('${escapedId}')"
                   class="px-2 py-0.5 text-[10px] text-indigo-600 hover:bg-indigo-100 rounded transition-colors"
@@ -1217,17 +1254,17 @@ function renderDocConversationsList(conversations, docId) {
                 </button>
                 <button 
                   onclick="event.stopPropagation(); editConversationTitle('${escapedId}')"
-                  class="p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                  class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all"
                   title="编辑名称"
                 >
-                  <i data-lucide="edit-2" size="12"></i>
+                  <i data-lucide="pencil" size="11"></i>
                 </button>
                 <button 
                   onclick="event.stopPropagation(); deleteConversation('${escapedId}')"
-                  class="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
                   title="删除对话"
                 >
-                  <i data-lucide="trash-2" size="12"></i>
+                  <i data-lucide="trash" size="11"></i>
                 </button>
               </div>
             </div>
@@ -1253,14 +1290,25 @@ window.continueConversation = async function(conversationId) {
 
 // 为文档开始新对话
 window.startNewConversationForDoc = async function(docId) {
+  // 取消之前的加载（如果有）
+  if (state.loadingAbortController) {
+    state.loadingAbortController.abort();
+    state.loadingAbortController = null;
+  }
+  
+  // 设置新的待加载文档ID
+  state.pendingDocId = docId;
+  
   // 设置加载状态
   setDocumentLoading(docId, true);
   try {
     await loadDoc(docId, false);
     await createNewConversation(true); // 保留文档状态，因为用户明确选择了文档
   } finally {
-    // 清除加载状态
-    setDocumentLoading(docId, false);
+    // 清除加载状态（只有在当前文档还是这个时才清除）
+    if (state.currentDocId === docId) {
+      setDocumentLoading(docId, false);
+    }
   }
 };
 
@@ -1321,14 +1369,25 @@ export async function startConversation(question = null) {
 
 // 直接选择文档开始对话
 export async function startWithDocument(docId) {
+  // 取消之前的加载（如果有）
+  if (state.loadingAbortController) {
+    state.loadingAbortController.abort();
+    state.loadingAbortController = null;
+  }
+  
+  // 设置新的待加载文档ID
+  state.pendingDocId = docId;
+  
   // 设置加载状态（如果文档在列表中）
   setDocumentLoading(docId, true);
   try {
     await loadDoc(docId, false);
     await startConversation();
   } finally {
-    // 清除加载状态
-    setDocumentLoading(docId, false);
+    // 清除加载状态（只有在当前文档还是这个时才清除）
+    if (state.currentDocId === docId) {
+      setDocumentLoading(docId, false);
+    }
   }
 }
 
@@ -1440,9 +1499,28 @@ export async function loadDoc(docId, autoOpenPanel = false) {
   console.log('文档ID:', docId);
   console.log('自动打开面板:', autoOpenPanel);
   
+  // 取消之前的加载请求（如果有）
+  if (state.loadingAbortController) {
+    console.log('取消之前的PDF加载请求');
+    state.loadingAbortController.abort();
+    state.loadingAbortController = null;
+  }
+  
+  // 设置当前待加载的文档ID
+  state.pendingDocId = docId;
+  
+  // 创建新的 AbortController 用于当前加载
+  const abortController = new AbortController();
+  state.loadingAbortController = abortController;
+  
+  // 检查函数：如果文档已切换，返回 true 表示应该取消
+  const shouldCancel = () => {
+    return state.pendingDocId !== docId || abortController.signal.aborted;
+  };
+  
   // 立即显示加载状态（不等待任何异步操作）
   const container = document.getElementById('pdf-content');
-  if (container) {
+  if (container && !shouldCancel()) {
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center py-20">
         <div class="relative">
@@ -1460,6 +1538,15 @@ export async function loadDoc(docId, autoOpenPanel = false) {
   }
   
   try {
+    // 检查是否应该取消
+    if (shouldCancel()) {
+      console.log('加载已取消（在开始获取PDF内容前）:', docId);
+      if (timer && perfMonitor) {
+        perfMonitor.end(timer, { success: false, error: '已取消' });
+      }
+      return;
+    }
+    
     console.log('开始加载PDF文档:', docId);
     
     // 并行执行：获取 PDF 内容和元数据（如果已缓存）
@@ -1469,6 +1556,16 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       : Promise.resolve(null);
     
     const [pdfDataRaw, cachedMetadata] = await Promise.all([pdfPromise, metadataPromise]);
+    
+    // 检查是否应该取消（在获取PDF内容后）
+    if (shouldCancel()) {
+      console.log('加载已取消（在获取PDF内容后）:', docId);
+      if (timer && perfMonitor) {
+        perfMonitor.end(timer, { success: false, error: '已取消' });
+      }
+      return;
+    }
+    
     console.log('PDF数据获取成功:', pdfDataRaw);
     
     // 合并列表中的元信息，尽量保留 type / file_path 等用于还原原始PDF的字段
@@ -1494,7 +1591,10 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       if (timer && perfMonitor) {
         perfMonitor.end(timer, { success: false, error: 'PDF数据为空' });
       }
-      alert('加载PDF内容失败：数据为空');
+      await showAlert('加载PDF内容失败：数据为空', {
+        type: 'error',
+        title: '加载失败'
+      });
       return;
     }
     
@@ -1504,6 +1604,15 @@ export async function loadDoc(docId, autoOpenPanel = false) {
         ...pdfData,
         pdf_view_id: pdfViewId
       };
+    }
+    
+    // 再次检查是否应该取消（在设置状态前）
+    if (shouldCancel()) {
+      console.log('加载已取消（在设置文档状态前）:', docId);
+      if (timer && perfMonitor) {
+        perfMonitor.end(timer, { success: false, error: '已取消' });
+      }
+      return;
     }
     
     state.currentDocId = docId;
@@ -1525,7 +1634,7 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       // 后台异步分析（不阻塞，更激进地延迟1秒，只在真正需要时才分析）
       setTimeout(async () => {
         // 检查用户是否还在查看这个文档，如果已经切换了就不分析了
-        if (state.currentDocId !== docId) {
+        if (state.currentDocId !== docId || state.pendingDocId !== docId) {
           console.log('用户已切换文档，取消分析:', docId);
           return;
         }
@@ -1535,7 +1644,7 @@ export async function loadDoc(docId, autoOpenPanel = false) {
           if (result.success && result.data) {
             state.docMetadata[docId] = result.data;
             // 更新显示（如果当前文档还是这个）
-            if (state.currentDocId === docId) {
+            if (state.currentDocId === docId && state.pendingDocId === docId) {
               state.currentDocInfo = result.data;
               // 更新文档列表显示（如果有分类信息）
               renderPDFList();
@@ -1549,6 +1658,15 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       state.currentDocInfo = state.docMetadata[docId];
     }
     
+    // 再次检查是否应该取消（在渲染PDF前）
+    if (shouldCancel()) {
+      console.log('加载已取消（在渲染PDF前）:', docId);
+      if (timer && perfMonitor) {
+        perfMonitor.end(timer, { success: false, error: '已取消' });
+      }
+      return;
+    }
+    
     // 立即渲染PDF（不等待元数据分析）
     if (container) {
       console.log('找到pdf-content容器，开始渲染PDF内容');
@@ -1559,6 +1677,16 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       try {
         // renderPDFContent现在是async函数
         await renderPDFContent(state.currentDoc, container);
+        
+        // 渲染完成后再次检查是否应该取消
+        if (shouldCancel()) {
+          console.log('加载已取消（在PDF渲染完成后）:', docId);
+          if (timer && perfMonitor) {
+            perfMonitor.end(timer, { success: false, error: '已取消' });
+          }
+          return;
+        }
+        
         console.log('PDF内容渲染完成');
         // 确保容器可见
         container.classList.remove('opacity-0');
@@ -1602,7 +1730,10 @@ export async function loadDoc(docId, autoOpenPanel = false) {
       if (timer && perfMonitor) {
         perfMonitor.end(timer, { success: false, error: '容器未找到' });
       }
-      alert('找不到PDF显示容器，请刷新页面重试');
+      await showAlert('找不到PDF显示容器，请刷新页面重试', {
+        type: 'error',
+        title: '加载失败'
+      });
       return;
     }
     
@@ -1683,22 +1814,47 @@ export async function loadDoc(docId, autoOpenPanel = false) {
     
     console.log('loadDoc 完成');
     
-    // 清除加载状态（如果设置了）
+    // 清除加载状态和 AbortController（如果设置了）
     if (state.loadingDocId === docId) {
       setDocumentLoading(docId, false);
     }
+    if (state.loadingAbortController === abortController) {
+      state.loadingAbortController = null;
+    }
+    // 如果这是当前待加载的文档，清除 pendingDocId
+    if (state.pendingDocId === docId) {
+      state.pendingDocId = null;
+    }
   } catch (error) {
+    // 如果是取消操作，不显示错误
+    if (abortController.signal.aborted || shouldCancel()) {
+      console.log('加载已取消（在错误处理中）:', docId);
+      if (timer && perfMonitor) {
+        perfMonitor.end(timer, { success: false, error: '已取消' });
+      }
+      return;
+    }
+    
     if (timer && perfMonitor) {
       perfMonitor.end(timer, { success: false, error: error.message });
     }
     console.error('加载PDF失败:', error);
     
-    // 清除加载状态（如果设置了）
+    // 清除加载状态和 AbortController（如果设置了）
     if (state.loadingDocId === docId) {
       setDocumentLoading(docId, false);
     }
+    if (state.loadingAbortController === abortController) {
+      state.loadingAbortController = null;
+    }
+    if (state.pendingDocId === docId) {
+      state.pendingDocId = null;
+    }
     
-    alert('加载PDF失败: ' + error.message);
+    await showAlert('加载PDF失败: ' + error.message, {
+      type: 'error',
+      title: '加载失败'
+    });
   }
 }
 
@@ -1756,7 +1912,7 @@ async function renderDocConversationsInRightPanel(docId) {
                     <span>${messageCount}条消息</span>
                   </div>
                 </div>
-                <div class="flex items-center gap-1 flex-shrink-0">
+                <div class="flex items-center gap-1.5 flex-shrink-0">
                   <button 
                     onclick="continueConversation('${escapedId}')"
                     class="px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-100 rounded transition-colors"
@@ -1766,17 +1922,17 @@ async function renderDocConversationsInRightPanel(docId) {
                   </button>
                   <button 
                     onclick="editConversationTitle('${escapedId}')"
-                    class="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                    class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all"
                     title="编辑名称"
                   >
-                    <i data-lucide="edit-2" size="14"></i>
+                    <i data-lucide="pencil" size="11"></i>
                   </button>
                   <button 
                     onclick="deleteConversation('${escapedId}')"
-                    class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
                     title="删除对话"
                   >
-                    <i data-lucide="trash-2" size="14"></i>
+                    <i data-lucide="trash" size="11"></i>
                   </button>
                 </div>
               </div>
@@ -3244,10 +3400,16 @@ async function openSettingsModalFromConsultation() {
     }
     
     // 最后的降级方案：显示提示
-    alert('请先在设置中配置 DeepSeek API Key\n\n点击侧边栏底部的设置图标进行配置');
+    await showAlert('请先在设置中配置 DeepSeek API Key\n\n点击侧边栏底部的设置图标进行配置', {
+      type: 'warning',
+      title: '需要配置 API Key'
+    });
   } catch (error) {
     console.error('打开设置对话框失败:', error);
-    alert('请先在设置中配置 DeepSeek API Key\n\n点击侧边栏底部的设置图标进行配置');
+    await showAlert('请先在设置中配置 DeepSeek API Key\n\n点击侧边栏底部的设置图标进行配置', {
+      type: 'warning',
+      title: '需要配置 API Key'
+    });
   }
 }
 
@@ -3294,9 +3456,16 @@ export async function regenerateMessage(messageId) {
     const apiConfigured = await checkApiConfigured();
     if (!apiConfigured) {
       // 显示提示并打开设置对话框
-      const shouldConfigure = confirm('未配置 DeepSeek API Key，无法重新生成对话。\n\n是否前往设置页面配置？');
-      if (shouldConfigure) {
+      try {
+        await showConfirm('未配置 DeepSeek API Key，无法重新生成对话。\n\n是否前往设置页面配置？', {
+          title: '需要配置 API Key',
+          type: 'warning',
+          confirmText: '前往设置',
+          cancelText: '取消'
+        });
         openSettingsModalFromConsultation();
+      } catch {
+        // 用户取消
       }
       return;
     }
@@ -4011,24 +4180,24 @@ export async function renderConversationHistory() {
                 ${escapeHtml(preview)}
               </div>
               <div class="flex items-center gap-1.5 mt-1">
-                <i data-lucide="clock" size="10" class="text-slate-400"></i>
+                <i data-lucide="clock" size="11" class="text-slate-400"></i>
                 <span class="text-[10px] text-slate-400">${timeStr}</span>
               </div>
             </div>
-            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0">
+            <div class="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button 
                 onclick="event.stopPropagation(); editConversationTitle('${escapedId}')"
-                class="p-1 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded transition-all"
+                class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all"
                 title="编辑名称"
               >
-                <i data-lucide="edit-2" size="12"></i>
+                <i data-lucide="pencil" size="11"></i>
               </button>
               <button 
                 onclick="event.stopPropagation(); deleteConversation('${escapedId}')"
-                class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+                class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
                 title="删除"
               >
-                <i data-lucide="trash-2" size="12"></i>
+                <i data-lucide="trash" size="11"></i>
               </button>
             </div>
           </div>
@@ -4103,24 +4272,24 @@ function renderConversationCard(conv, module) {
               ${escapeHtml(preview)}
             </div>
             <div class="flex items-center gap-1.5">
-              <i data-lucide="clock" size="10" class="text-slate-400"></i>
+              <i data-lucide="clock" size="11" class="text-slate-400"></i>
               <span class="text-[10px] text-slate-400">${timeStr}</span>
             </div>
           </div>
-          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0">
+          <div class="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
             <button 
               onclick="event.stopPropagation(); editConversationTitle('${escapedId}')"
-              class="p-1 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded transition-all"
+              class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all"
               title="编辑名称"
             >
-              <i data-lucide="edit-2" size="12"></i>
+              <i data-lucide="pencil" size="11"></i>
             </button>
             <button 
               onclick="event.stopPropagation(); deleteConversation('${escapedId}')"
-              class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+              class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
               title="删除"
             >
-              <i data-lucide="trash-2" size="12"></i>
+              <i data-lucide="trash" size="11"></i>
             </button>
           </div>
         </div>
@@ -4594,18 +4763,24 @@ export async function editConversationTitle(conversationId) {
   // 获取当前标题（如果有）
   const currentTitle = conversation.title || '';
   
-  // 使用 prompt 让用户输入新标题
-  const newTitle = prompt('请输入对话名称：', currentTitle);
-  
-  // 如果用户取消或标题为空，不进行任何操作
-  if (newTitle === null) {
+  // 使用自定义对话框让用户输入新标题
+  let trimmedTitle;
+  try {
+    const newTitle = await showPrompt('请输入对话名称：', {
+      title: '编辑对话名称',
+      defaultValue: currentTitle,
+      placeholder: '对话名称'
+    });
+    trimmedTitle = newTitle.trim();
+    if (!trimmedTitle) {
+      await showAlert('对话名称不能为空', {
+        type: 'warning',
+        title: '输入无效'
+      });
+      return;
+    }
+  } catch {
     return; // 用户取消
-  }
-  
-  const trimmedTitle = newTitle.trim();
-  if (!trimmedTitle) {
-    alert('对话名称不能为空');
-    return;
   }
   
   // 在所有存储键中查找并更新对话
@@ -4649,8 +4824,13 @@ export async function editConversationTitle(conversationId) {
 
 // 删除历史对话（优化版本：使用对话ID）
 export async function deleteConversation(indexOrId) {
-  if (!confirm('确定要删除这条历史对话吗？')) {
-    return;
+  try {
+    await showConfirm('确定要删除这条历史对话吗？', {
+      title: '确认删除',
+      type: 'warning'
+    });
+  } catch {
+    return; // 用户取消
   }
   
   // 先清除缓存，确保获取最新数据
@@ -5440,8 +5620,13 @@ export async function clearConversation() {
     return; // 没有对话，无需清除
   }
   
-  if (!confirm('确定要清除当前对话吗？此操作无法撤销，但历史对话记录会保留。')) {
-    return;
+  try {
+    await showConfirm('确定要清除当前对话吗？此操作无法撤销，但历史对话记录会保留。', {
+      title: '确认清除',
+      type: 'warning'
+    });
+  } catch {
+    return; // 用户取消
   }
   
   // 先保存当前对话（如果有消息）
@@ -5642,7 +5827,10 @@ async function showModuleSelectorForDoc(docId) {
     const { moduleState } = modulesModule;
     
     if (!moduleState.groupedModules || moduleState.groupedModules.length === 0) {
-      alert('模块数据未加载，请稍候再试');
+      await showAlert('模块数据未加载，请稍候再试', {
+        type: 'warning',
+        title: '数据未加载'
+      });
       return;
     }
     
@@ -6098,7 +6286,10 @@ async function showModuleSelectorForDoc(docId) {
         showToast(`文档已移动到${moduleName}`, 'success');
       } catch (error) {
         console.error('更新文档模块失败:', error);
-        alert('更新失败: ' + (error.message || '未知错误'));
+        await showAlert('更新失败: ' + (error.message || '未知错误'), {
+          type: 'error',
+          title: '更新失败'
+        });
       }
     };
     
@@ -6110,7 +6301,10 @@ async function showModuleSelectorForDoc(docId) {
     });
   } catch (error) {
     console.error('显示模块选择器失败:', error);
-    alert('加载模块选择器失败');
+    await showAlert('加载模块选择器失败', {
+      type: 'error',
+      title: '加载失败'
+    });
   }
 }
 

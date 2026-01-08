@@ -2,6 +2,7 @@ import { itemsAPI, parseAPI, aiAPI, settingsAPI, tagsAPI, exportAPI, clearAPICac
 import { storage } from './storage.js';
 import { formatTime, truncate, isURL, debounce, throttle, loadPDFJS } from './utils.js';
 import { showToast, showLoadingToast } from './toast.js';
+import { showConfirm, showAlert, showPrompt } from './dialog.js';
 
 // 配置 Marked.js
 if (typeof marked !== 'undefined') {
@@ -621,7 +622,7 @@ function renderRepoList() {
             data-action="archive"
             data-id="${item.id}"
             class="px-2.5 py-1.5 text-slate-600 hover:text-slate-800 hover:bg-slate-50 rounded-md transition-colors flex items-center justify-center"
-            title="归档"
+            title="标记为已贯通（归档后不在智能问答中引用）"
           >
             <i class="fa-solid fa-archive text-sm"></i>
           </button>
@@ -690,7 +691,7 @@ function renderArchiveList() {
       <tr>
         <td colspan="5" class="px-6 py-12 text-center text-slate-400">
           <i class="fa-solid fa-archive text-3xl mb-2"></i>
-          <p>归档为空，整理你的知识库吧</p>
+          <p>暂无已贯通的知识点</p>
         </td>
       </tr>
     `;
@@ -1082,11 +1083,18 @@ function filterByTag(tag) {
 }
 
 // 显示编辑标签模态框
-function showEditTagModal(oldTag) {
-  const newTagName = prompt('请输入新标签名称:', oldTag);
-  if (!newTagName || !newTagName.trim() || newTagName === oldTag) return;
-
-  handleRenameTag(oldTag, newTagName.trim());
+async function showEditTagModal(oldTag) {
+  try {
+    const newTagName = await showPrompt('请输入新标签名称:', {
+      title: '重命名标签',
+      defaultValue: oldTag,
+      placeholder: '标签名称'
+    });
+    if (!newTagName || !newTagName.trim() || newTagName === oldTag) return;
+    handleRenameTag(oldTag, newTagName.trim());
+  } catch {
+    // 用户取消
+  }
 }
 
 // 创建标签
@@ -1146,8 +1154,13 @@ async function handleRenameTag(oldTag, newTag) {
 
 // 删除标签
 async function handleDeleteTag(tag) {
-  if (!confirm(`确定要删除标签 "#${tag}" 吗？这将从所有使用该标签的内容中移除。`)) {
-    return;
+  try {
+    await showConfirm(`确定要删除标签 "#${tag}" 吗？这将从所有使用该标签的内容中移除。`, {
+      title: '确认删除',
+      type: 'warning'
+    });
+  } catch {
+    return; // 用户取消
   }
 
   try {
@@ -2304,10 +2317,16 @@ async function handleRepoUpload() {
       await loadItems(true);
 
       // 友好提示
-      alert('PDF 上传成功！文档已加入当前知识库，可在智能问答中用于提问。');
+      await showAlert('PDF 上传成功！文档已加入当前知识库，可在智能问答中用于提问。', {
+        type: 'success',
+        title: '上传成功'
+      });
     } catch (error) {
       console.error('文档库上传失败:', error);
-      alert('上传失败: ' + (error.message || '请稍后重试'));
+      await showAlert('上传失败: ' + (error.message || '请稍后重试'), {
+        type: 'error',
+        title: '上传失败'
+      });
     } finally {
       if (btnRepoUpload) {
         btnRepoUpload.disabled = false;
@@ -2845,8 +2864,14 @@ function bindEvents() {
       } else if (action === 'view') {
         await openDetail(item);
       } else if (action === 'archive') {
-        if (!confirm(`确定要归档 "${item.title}" 吗？归档后可在归档页面恢复。`)) {
-          return;
+        const confirmMessage = `确定要将「${item.title}」标记为已贯通吗？\n\n归档后，此知识点将：\n• 不再出现在智能问答中\n• 可在归档页面查看和恢复`;
+        try {
+          await showConfirm(confirmMessage, {
+            title: '确认归档',
+            type: 'warning'
+          });
+        } catch {
+          return; // 用户取消
         }
         try {
           const loadingToast = showLoadingToast('正在归档...');
@@ -2866,7 +2891,7 @@ function bindEvents() {
               updateDashboardStats();
             }
             loadingToast.close();
-            showToast('归档成功', 'success');
+            showToast('已归档。此知识点将不再出现在智能问答中', 'success');
           } catch (error) {
             loadingToast.close();
             console.error('归档失败:', error);
@@ -2877,8 +2902,13 @@ function bindEvents() {
           showToast(error.message || '归档失败', 'error');
         }
       } else if (action === 'delete') {
-        if (!confirm(`确定要删除 "${item.title}" 吗？删除后可在归档页面恢复。`)) {
-          return;
+        try {
+          await showConfirm(`确定要删除 "${item.title}" 吗？删除后可在归档页面恢复。`, {
+            title: '确认删除',
+            type: 'warning'
+          });
+        } catch {
+          return; // 用户取消
         }
         try {
           const loadingToast = showLoadingToast('正在删除...');
@@ -2966,8 +2996,14 @@ function bindEvents() {
           showToast(error.message || '恢复失败', 'error');
         }
       } else if (action === 'permanent-delete') {
-        if (!confirm(`确定要永久删除 "${item.title}" 吗？此操作不可恢复！`)) {
-          return;
+        try {
+          await showConfirm(`确定要永久删除 "${item.title}" 吗？此操作不可恢复！`, {
+            title: '确认永久删除',
+            type: 'error',
+            confirmText: '永久删除'
+          });
+        } catch {
+          return; // 用户取消
         }
         try {
           const loadingToast = showLoadingToast('正在永久删除...');
@@ -3415,7 +3451,10 @@ async function init() {
   } catch (error) {
     console.error('初始化失败:', error);
     console.error('错误堆栈:', error.stack);
-    alert('应用初始化失败，请刷新页面重试。错误信息: ' + error.message);
+    await showAlert('应用初始化失败，请刷新页面重试。错误信息: ' + error.message, {
+      type: 'error',
+      title: '初始化失败'
+    });
   }
 }
 

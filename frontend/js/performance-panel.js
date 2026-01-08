@@ -3,6 +3,7 @@
  */
 
 import performanceMonitor from './performance-monitor.js';
+import { showConfirm, showPrompt } from './dialog.js';
 
 class PerformancePanel {
   constructor() {
@@ -83,14 +84,22 @@ class PerformancePanel {
     // 导出按钮
     const exportBtn = this.panel.querySelector('#perf-panel-export');
     if (exportBtn) {
-      exportBtn.addEventListener('click', () => {
-        const format = prompt('选择导出格式:\n1. JSON\n2. CSV\n3. HTML', '1');
-        if (format === '1') {
-          performanceMonitor.exportJSON();
-        } else if (format === '2') {
-          performanceMonitor.exportCSV();
-        } else if (format === '3') {
-          performanceMonitor.exportHTML();
+      exportBtn.addEventListener('click', async () => {
+        try {
+          const format = await showPrompt('选择导出格式:\n1. JSON\n2. CSV\n3. HTML', {
+            title: '选择导出格式',
+            defaultValue: '1',
+            placeholder: '输入 1、2 或 3'
+          });
+          if (format === '1') {
+            performanceMonitor.exportJSON();
+          } else if (format === '2') {
+            performanceMonitor.exportCSV();
+          } else if (format === '3') {
+            performanceMonitor.exportHTML();
+          }
+        } catch {
+          // 用户取消
         }
       });
     }
@@ -98,10 +107,16 @@ class PerformancePanel {
     // 清除按钮
     const clearBtn = this.panel.querySelector('#perf-panel-clear');
     if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        if (confirm('确定要清除所有性能数据吗？')) {
+      clearBtn.addEventListener('click', async () => {
+        try {
+          await showConfirm('确定要清除所有性能数据吗？', {
+            title: '确认清除',
+            type: 'warning'
+          });
           performanceMonitor.clear();
           this.update();
+        } catch {
+          // 用户取消
         }
       });
     }

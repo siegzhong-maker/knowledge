@@ -1828,6 +1828,7 @@
 
   <script type="module" src="./js/performance-monitor.js"></script>
   <script type="module" src="./js/performance-panel.js"></script>
+  <script type="module" src="./js/dialog.js"></script>
   <script type="module" src="./js/ui.js"></script>
   <script type="module" src="./js/knowledge-extraction.js"></script>
   <script type="module" src="./js/migrate-to-uncategorized.js"></script>
@@ -1845,7 +1846,11 @@
             window.openContextModal();
           } else {
             console.error('openContextModal not available');
-            alert('功能加载中，请稍后再试');
+            if (window.showAlert) {
+              window.showAlert('功能加载中，请稍后再试', { type: 'info', title: '提示' });
+            } else {
+              console.error('Dialog系统未加载');
+            }
           }
         }, 100);
       }
@@ -2109,18 +2114,36 @@
                 
                 if (!initSuccess || !currentKbId) {
                   // 知识库未初始化，可能是数据库未迁移
-                  const shouldContinue = confirm(
-                    '知识库系统未初始化。\n\n' +
-                    '如果这是首次使用多知识库功能，请先运行数据库迁移：\n' +
-                    'npm run migrate-kb\n\n' +
-                    '是否继续上传（不关联知识库和模块）？'
-                  );
+                  try {
+                    await (window.showConfirm || ((m) => Promise.resolve(confirm(m))))(
+                      '知识库系统未初始化。\n\n' +
+                      '如果这是首次使用多知识库功能，请先运行数据库迁移：\n' +
+                      'npm run migrate-kb\n\n' +
+                      '是否继续上传（不关联知识库和模块）？',
+                      {
+                        title: '知识库未初始化',
+                        type: 'warning'
+                      }
+                    );
+                  } catch {
+                    // 用户取消
+                  }
                   resolve(null);
                   return;
                 }
               } catch (e) {
                 console.warn('初始化知识库失败:', e);
-                const shouldContinue = confirm('知识库系统初始化失败，是否继续上传（不关联知识库和模块）？');
+                try {
+                  await (window.showConfirm || ((m) => Promise.resolve(confirm(m))))(
+                    '知识库系统初始化失败，是否继续上传（不关联知识库和模块）？',
+                    {
+                      title: '初始化失败',
+                      type: 'warning'
+                    }
+                  );
+                } catch {
+                  // 用户取消
+                }
                 resolve(null);
                 return;
               }
@@ -2141,11 +2164,18 @@
               
               if (modules.length === 0) {
                 // 当前知识库没有模块，允许上传但不关联模块
-                if (confirm('当前知识库没有模块，是否继续上传（不关联模块）？')) {
-                  resolve(null);
-                } else {
-                  resolve(null);
+                try {
+                  await (window.showConfirm || ((m) => Promise.resolve(confirm(m))))(
+                    '当前知识库没有模块，是否继续上传（不关联模块）？',
+                    {
+                      title: '没有模块',
+                      type: 'info'
+                    }
+                  );
+                } catch {
+                  // 用户取消
                 }
+                resolve(null);
                 return;
               }
             }
