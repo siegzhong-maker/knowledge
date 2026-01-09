@@ -487,6 +487,27 @@
       border: 1px solid #e2e8f0;
     }
     
+    /* 自定义选择框样式 */
+    .custom-select-menu {
+      animation: dropdownFadeIn 0.15s ease-out;
+      transform-origin: top;
+    }
+    
+    @keyframes dropdownFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    .custom-select-arrow {
+      transition: transform 0.2s ease;
+    }
+    
     .metric-item:hover {
       border-color: #cbd5e1;
       background: #f8fafc;

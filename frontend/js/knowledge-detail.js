@@ -9,15 +9,19 @@ let isEditMode = false;
 let drawerElement = null;
 let overlayElement = null;
 
+// 分类配置（与 knowledge-items.js 保持一致）
+const CATEGORY_CONFIG = {
+  work: { name: '工作', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: 'briefcase' },
+  learning: { name: '学习', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: 'book-open' },
+  leisure: { name: '娱乐', color: 'bg-red-100 text-red-700 border-red-200', icon: 'gamepad-2' },
+  life: { name: '生活', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: 'heart' },
+  other: { name: '其他', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: 'circle' }
+};
+
 // 分类名称映射
 function getCategoryName(category) {
-  const map = {
-    work: '工作',
-    learning: '学习',
-    leisure: '娱乐',
-    life: '生活'
-  };
-  return map[category] || '工作';
+  const config = CATEGORY_CONFIG[category];
+  return config ? config.name : '工作';
 }
 
 /**
@@ -327,27 +331,102 @@ function renderContent() {
         <div class="flex-1">
           <label class="block text-xs text-slate-500 mb-1">主分类</label>
           ${isEditMode ? `
-            <select id="knowledge-category-select" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <option value="work" ${currentItem.category === 'work' ? 'selected' : ''}>工作</option>
-              <option value="learning" ${currentItem.category === 'learning' ? 'selected' : ''}>学习</option>
-              <option value="leisure" ${currentItem.category === 'leisure' ? 'selected' : ''}>娱乐</option>
-              <option value="life" ${currentItem.category === 'life' ? 'selected' : ''}>生活</option>
-            </select>
+            <div class="relative">
+              <!-- 隐藏的原始 select 用于表单提交 -->
+              <select id="knowledge-category-select" class="hidden">
+                <option value="work" ${currentItem.category === 'work' ? 'selected' : ''}>工作</option>
+                <option value="learning" ${currentItem.category === 'learning' ? 'selected' : ''}>学习</option>
+                <option value="leisure" ${currentItem.category === 'leisure' ? 'selected' : ''}>娱乐</option>
+                <option value="life" ${currentItem.category === 'life' ? 'selected' : ''}>生活</option>
+              </select>
+              <!-- 自定义选择框按钮 -->
+              <button 
+                type="button"
+                id="knowledge-category-select-btn"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-left flex items-center justify-between hover:bg-slate-50 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <span class="flex items-center gap-2">
+                  ${(() => {
+                    const category = currentItem.category || 'work';
+                    const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.other;
+                    return `<i data-lucide="${config.icon}" size="14" class="text-slate-600"></i><span>${config.name}</span>`;
+                  })()}
+                </span>
+                <i data-lucide="chevron-down" size="16" class="text-slate-400 custom-select-arrow" id="knowledge-category-select-arrow"></i>
+              </button>
+              <!-- 下拉菜单 -->
+              <div 
+                id="knowledge-category-select-menu"
+                class="hidden absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto custom-select-menu"
+              >
+                ${Object.keys(CATEGORY_CONFIG).filter(key => key !== 'other').map(category => {
+                  const config = CATEGORY_CONFIG[category];
+                  const isSelected = (currentItem.category || 'work') === category;
+                  return `
+                    <button
+                      type="button"
+                      data-value="${category}"
+                      class="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-indigo-50 hover:text-indigo-700 transition-colors ${isSelected ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-700'}"
+                    >
+                      <span class="flex items-center gap-2">
+                        <i data-lucide="${config.icon}" size="14"></i>
+                        <span>${config.name}</span>
+                      </span>
+                      ${isSelected ? '<i data-lucide="check" size="16" class="text-indigo-600"></i>' : ''}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
           ` : `
-            <div class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
-              ${getCategoryName(currentItem.category || 'work')}
+            <div class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm flex items-center gap-2">
+              ${(() => {
+                const category = currentItem.category || 'work';
+                const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.other;
+                return `<i data-lucide="${config.icon}" size="14" class="text-slate-600"></i><span>${config.name}</span>`;
+              })()}
             </div>
           `}
         </div>
         <div class="flex-1">
           <label class="block text-xs text-slate-500 mb-1">子分类</label>
           ${isEditMode ? `
-            <select id="knowledge-subcategory-select" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-              <option value="">请选择子分类</option>
-            </select>
+            <div class="relative">
+              <!-- 隐藏的原始 select 用于表单提交 -->
+              <select id="knowledge-subcategory-select" class="hidden">
+                <option value="">请选择子分类</option>
+              </select>
+              <!-- 自定义选择框按钮 -->
+              <button 
+                type="button"
+                id="knowledge-subcategory-select-btn"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-left flex items-center justify-between hover:bg-slate-50 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <span class="flex items-center gap-2 ${!currentItem.subcategory || !currentItem.subcategory.name ? 'text-slate-400 italic' : 'text-slate-700'}">
+                  ${(currentItem.subcategory && currentItem.subcategory.name) ? `<i data-lucide="tag" size="14" class="text-slate-600"></i><span>${currentItem.subcategory.name}</span>` : '请选择子分类'}
+                </span>
+                <i data-lucide="chevron-down" size="16" class="text-slate-400 custom-select-arrow" id="knowledge-subcategory-select-arrow"></i>
+              </button>
+              <!-- 下拉菜单 -->
+              <div 
+                id="knowledge-subcategory-select-menu"
+                class="hidden absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto custom-select-menu"
+              >
+                <button
+                  type="button"
+                  data-value=""
+                  class="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-slate-50 hover:text-slate-700 transition-colors ${!currentItem.subcategory_id ? 'bg-slate-50 text-slate-700 font-medium' : 'text-slate-500 italic'}"
+                >
+                  <span>请选择子分类</span>
+                  ${!currentItem.subcategory_id ? '<i data-lucide="check" size="16" class="text-indigo-600"></i>' : ''}
+                </button>
+                <!-- 子分类选项将通过 JavaScript 动态填充 -->
+                <div id="knowledge-subcategory-select-options"></div>
+              </div>
+            </div>
           ` : `
-            <div class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm ${!currentItem.subcategory || !currentItem.subcategory.name ? 'text-slate-400 italic' : ''}">
-              ${(currentItem.subcategory && currentItem.subcategory.name) ? currentItem.subcategory.name : '未设置子分类（点击上方"调整"按钮可设置）'}
+            <div class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm ${!currentItem.subcategory || !currentItem.subcategory.name ? 'text-slate-400 italic' : ''} flex items-center gap-2">
+              ${(currentItem.subcategory && currentItem.subcategory.name) ? `<i data-lucide="tag" size="14" class="text-slate-600"></i><span>${currentItem.subcategory.name}</span>` : '未设置子分类（点击上方"调整"按钮可设置）'}
             </div>
           `}
         </div>
@@ -513,17 +592,14 @@ function toggleEditMode() {
   // 添加键盘快捷键监听
   if (isEditMode) {
     document.addEventListener('keydown', handleEditKeyboard);
+    // 初始化自定义选择框
+    initCustomSelects();
     // 加载子分类选项
     loadSubcategoriesForCategory(currentItem.category || 'work');
-    // 监听分类变化
-    const categorySelect = document.getElementById('knowledge-category-select');
-    if (categorySelect) {
-      categorySelect.addEventListener('change', (e) => {
-        loadSubcategoriesForCategory(e.target.value);
-      });
-    }
   } else {
     document.removeEventListener('keydown', handleEditKeyboard);
+    // 关闭所有打开的下拉菜单
+    closeAllSelectMenus();
   }
 }
 
@@ -534,6 +610,7 @@ async function loadSubcategoriesForCategory(category) {
   try {
     const response = await knowledgeAPI.getSubcategories(category);
     if (response.success) {
+      // 更新隐藏的 select
       const subcategorySelect = document.getElementById('knowledge-subcategory-select');
       if (subcategorySelect) {
         subcategorySelect.innerHTML = '<option value="">请选择子分类</option>';
@@ -547,10 +624,338 @@ async function loadSubcategoriesForCategory(category) {
           subcategorySelect.appendChild(option);
         });
       }
+      
+      // 更新自定义选择框的菜单选项
+      const menuOptions = document.getElementById('knowledge-subcategory-select-options');
+      if (menuOptions) {
+        menuOptions.innerHTML = response.data.map(subcat => {
+          const isSelected = currentItem.subcategory_id === subcat.id;
+          return `
+            <button
+              type="button"
+              data-value="${subcat.id}"
+              class="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-indigo-50 hover:text-indigo-700 transition-colors ${isSelected ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-700'}"
+            >
+              <span class="flex items-center gap-2">
+                <i data-lucide="tag" size="14"></i>
+                <span>${subcat.name}</span>
+              </span>
+              ${isSelected ? '<i data-lucide="check" size="16" class="text-indigo-600"></i>' : ''}
+            </button>
+          `;
+        }).join('');
+        
+        // 重新初始化图标
+        if (window.lucide) {
+          window.lucide.createIcons(menuOptions);
+        }
+        
+        // 为新的选项按钮绑定点击事件
+        menuOptions.querySelectorAll('button[data-value]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            handleSubcategorySelect(e.currentTarget.dataset.value);
+          });
+        });
+      }
+      
+      // 更新按钮显示
+      const btn = document.getElementById('knowledge-subcategory-select-btn');
+      if (btn && currentItem.subcategory_id) {
+        const selectedSubcat = response.data.find(sc => sc.id === currentItem.subcategory_id);
+        if (selectedSubcat) {
+          const btnSpan = btn.querySelector('span');
+          if (btnSpan) {
+            btnSpan.className = 'flex items-center gap-2 text-slate-700';
+            btnSpan.innerHTML = `<i data-lucide="tag" size="14" class="text-slate-600"></i><span>${selectedSubcat.name}</span>`;
+            if (window.lucide) {
+              window.lucide.createIcons(btnSpan);
+            }
+          }
+        }
+      }
     }
   } catch (error) {
     console.error('加载子分类失败:', error);
   }
+}
+
+/**
+ * 外部点击处理函数（用于关闭下拉菜单）
+ */
+function handleSelectOutsideClick(e) {
+  const categoryBtn = document.getElementById('knowledge-category-select-btn');
+  const categoryMenu = document.getElementById('knowledge-category-select-menu');
+  const subcategoryBtn = document.getElementById('knowledge-subcategory-select-btn');
+  const subcategoryMenu = document.getElementById('knowledge-subcategory-select-menu');
+  
+  if (!categoryBtn?.contains(e.target) && !categoryMenu?.contains(e.target) &&
+      !subcategoryBtn?.contains(e.target) && !subcategoryMenu?.contains(e.target)) {
+    closeAllSelectMenus();
+    // 移除监听器
+    document.removeEventListener('click', handleSelectOutsideClick, true);
+  }
+}
+
+/**
+ * 初始化自定义选择框
+ */
+function initCustomSelects() {
+  // 初始化图标
+  if (window.lucide) {
+    window.lucide.createIcons(document.getElementById('knowledge-detail-drawer'));
+  }
+  
+  // 主分类选择框
+  const categoryBtn = document.getElementById('knowledge-category-select-btn');
+  const categoryMenu = document.getElementById('knowledge-category-select-menu');
+  const categorySelect = document.getElementById('knowledge-category-select');
+  const categoryArrow = document.getElementById('knowledge-category-select-arrow');
+  
+  if (categoryBtn && categoryMenu) {
+    // 点击按钮展开/收起菜单
+    categoryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = !categoryMenu.classList.contains('hidden');
+      
+      // 关闭所有其他菜单
+      closeAllSelectMenus();
+      document.removeEventListener('click', handleSelectOutsideClick, true);
+      
+      if (!isOpen) {
+        categoryMenu.classList.remove('hidden');
+        if (categoryArrow) {
+          categoryArrow.style.transform = 'rotate(180deg)';
+        }
+        categoryBtn.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+        // 添加外部点击监听器（延迟绑定，避免立即触发）
+        setTimeout(() => {
+          document.addEventListener('click', handleSelectOutsideClick, true);
+        }, 0);
+      } else {
+        categoryMenu.classList.add('hidden');
+        if (categoryArrow) {
+          categoryArrow.style.transform = 'rotate(0deg)';
+        }
+        categoryBtn.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
+      }
+    });
+    
+    // 点击菜单选项
+    categoryMenu.querySelectorAll('button[data-value]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCategorySelect(e.currentTarget.dataset.value);
+        document.removeEventListener('click', handleSelectOutsideClick, true);
+      });
+    });
+  }
+  
+  // 子分类选择框
+  const subcategoryBtn = document.getElementById('knowledge-subcategory-select-btn');
+  const subcategoryMenu = document.getElementById('knowledge-subcategory-select-menu');
+  const subcategoryArrow = document.getElementById('knowledge-subcategory-select-arrow');
+  
+  if (subcategoryBtn && subcategoryMenu) {
+    // 点击按钮展开/收起菜单
+    subcategoryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = !subcategoryMenu.classList.contains('hidden');
+      
+      // 关闭所有其他菜单
+      closeAllSelectMenus();
+      document.removeEventListener('click', handleSelectOutsideClick, true);
+      
+      if (!isOpen) {
+        subcategoryMenu.classList.remove('hidden');
+        if (subcategoryArrow) {
+          subcategoryArrow.style.transform = 'rotate(180deg)';
+        }
+        subcategoryBtn.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+        // 添加外部点击监听器（延迟绑定，避免立即触发）
+        setTimeout(() => {
+          document.addEventListener('click', handleSelectOutsideClick, true);
+        }, 0);
+      } else {
+        subcategoryMenu.classList.add('hidden');
+        if (subcategoryArrow) {
+          subcategoryArrow.style.transform = 'rotate(0deg)';
+        }
+        subcategoryBtn.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
+      }
+    });
+    
+    // 点击"请选择子分类"选项
+    const emptyOption = subcategoryMenu.querySelector('button[data-value=""]');
+    if (emptyOption) {
+      emptyOption.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSubcategorySelect('');
+        document.removeEventListener('click', handleSelectOutsideClick, true);
+      });
+    }
+  }
+}
+
+/**
+ * 关闭所有选择框菜单
+ */
+function closeAllSelectMenus() {
+  const categoryMenu = document.getElementById('knowledge-category-select-menu');
+  const categoryBtn = document.getElementById('knowledge-category-select-btn');
+  const categoryArrow = document.getElementById('knowledge-category-select-arrow');
+  
+  const subcategoryMenu = document.getElementById('knowledge-subcategory-select-menu');
+  const subcategoryBtn = document.getElementById('knowledge-subcategory-select-btn');
+  const subcategoryArrow = document.getElementById('knowledge-subcategory-select-arrow');
+  
+  if (categoryMenu) {
+    categoryMenu.classList.add('hidden');
+  }
+  if (categoryBtn) {
+    categoryBtn.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
+  }
+  if (categoryArrow) {
+    categoryArrow.style.transform = 'rotate(0deg)';
+  }
+  
+  if (subcategoryMenu) {
+    subcategoryMenu.classList.add('hidden');
+  }
+  if (subcategoryBtn) {
+    subcategoryBtn.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
+  }
+  if (subcategoryArrow) {
+    subcategoryArrow.style.transform = 'rotate(0deg)';
+  }
+  
+  // 移除外部点击监听器
+  document.removeEventListener('click', handleSelectOutsideClick, true);
+}
+
+/**
+ * 处理分类选择
+ */
+function handleCategorySelect(category) {
+  // 更新隐藏的 select
+  const categorySelect = document.getElementById('knowledge-category-select');
+  if (categorySelect) {
+    categorySelect.value = category;
+    // 触发 change 事件
+    categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  
+  // 更新按钮显示
+  const categoryBtn = document.getElementById('knowledge-category-select-btn');
+  const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.other;
+  if (categoryBtn) {
+    const btnSpan = categoryBtn.querySelector('span.flex.items-center.gap-2');
+    if (btnSpan) {
+      btnSpan.innerHTML = `<i data-lucide="${config.icon}" size="14" class="text-slate-600"></i><span>${config.name}</span>`;
+      if (window.lucide) {
+        window.lucide.createIcons(btnSpan);
+      }
+    }
+  }
+  
+  // 更新菜单中的选中状态
+  const categoryMenu = document.getElementById('knowledge-category-select-menu');
+  if (categoryMenu) {
+    categoryMenu.querySelectorAll('button[data-value]').forEach(btn => {
+      const isSelected = btn.dataset.value === category;
+      if (isSelected) {
+        btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        btn.classList.remove('text-slate-700');
+        if (!btn.querySelector('i[data-lucide="check"]')) {
+          btn.querySelector('span.flex.items-center.justify-between').innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
+          if (window.lucide) {
+            window.lucide.createIcons(btn);
+          }
+        }
+      } else {
+        btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        btn.classList.add('text-slate-700');
+        const checkIcon = btn.querySelector('i[data-lucide="check"]');
+        if (checkIcon) {
+          checkIcon.remove();
+        }
+      }
+    });
+  }
+  
+  // 关闭菜单
+  closeAllSelectMenus();
+  
+  // 加载子分类
+  loadSubcategoriesForCategory(category);
+}
+
+/**
+ * 处理子分类选择
+ */
+function handleSubcategorySelect(subcategoryId) {
+  // 更新隐藏的 select
+  const subcategorySelect = document.getElementById('knowledge-subcategory-select');
+  if (subcategorySelect) {
+    subcategorySelect.value = subcategoryId || '';
+  }
+  
+  // 更新按钮显示
+  const subcategoryBtn = document.getElementById('knowledge-subcategory-select-btn');
+  if (subcategoryBtn) {
+    if (subcategoryId) {
+      const selectedOption = subcategorySelect?.querySelector(`option[value="${subcategoryId}"]`);
+      const subcategoryName = selectedOption ? selectedOption.textContent : '';
+      if (subcategoryName) {
+        const btnSpan = subcategoryBtn.querySelector('span');
+        if (btnSpan) {
+          btnSpan.className = 'flex items-center gap-2 text-slate-700';
+          btnSpan.innerHTML = `<i data-lucide="tag" size="14" class="text-slate-600"></i><span>${subcategoryName}</span>`;
+          if (window.lucide) {
+            window.lucide.createIcons(btnSpan);
+          }
+        }
+      }
+    } else {
+      const btnSpan = subcategoryBtn.querySelector('span');
+      if (btnSpan) {
+        btnSpan.className = 'flex items-center gap-2 text-slate-400 italic';
+        btnSpan.textContent = '请选择子分类';
+      }
+    }
+  }
+  
+  // 更新菜单中的选中状态
+  const subcategoryMenu = document.getElementById('knowledge-subcategory-select-menu');
+  if (subcategoryMenu) {
+    subcategoryMenu.querySelectorAll('button[data-value]').forEach(btn => {
+      const isSelected = btn.dataset.value === (subcategoryId || '');
+      if (isSelected) {
+        btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        btn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
+        if (!btn.querySelector('i[data-lucide="check"]')) {
+          const container = btn.querySelector('span.flex.items-center.justify-between') || btn;
+          container.innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
+          if (window.lucide) {
+            window.lucide.createIcons(btn);
+          }
+        }
+      } else {
+        btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        if (btn.dataset.value === '') {
+          btn.classList.add('text-slate-500', 'italic');
+        } else {
+          btn.classList.add('text-slate-700');
+        }
+        const checkIcon = btn.querySelector('i[data-lucide="check"]');
+        if (checkIcon) {
+          checkIcon.remove();
+        }
+      }
+    });
+  }
+  
+  // 关闭菜单
+  closeAllSelectMenus();
 }
 
 /**
