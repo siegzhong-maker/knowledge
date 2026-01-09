@@ -3,7 +3,67 @@ const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
 
 /**
- * 从文档内容中提取知识点
+ * 将长内容分块（智能分块，尽量在段落边界分割）
+ * @param {string} content - 原始内容
+ * @param {number} chunkSize - 每块的大小（字符数）
+ * @param {number} overlap - 块之间的重叠大小（字符数）
+ * @returns {Array<{text: string, startIndex: number, endIndex: number}>} 分块数组
+ */
+function splitContentIntoChunks(content, chunkSize = 20000, overlap = 1000) {
+  if (content.length <= chunkSize) {
+    return [{ text: content, startIndex: 0, endIndex: content.length }];
+  }
+  
+  const chunks = [];
+  let startIndex = 0;
+  
+  while (startIndex < content.length) {
+    let endIndex = Math.min(startIndex + chunkSize, content.length);
+    
+    // 如果不在文档末尾，尝试在段落边界处分割
+    if (endIndex < content.length) {
+      // 向前查找段落分隔符（双换行、标题标记等）
+      const searchStart = Math.max(endIndex - 500, startIndex);
+      const segment = content.substring(searchStart, endIndex);
+      
+      // 查找段落分隔符
+      const paragraphBreak = segment.lastIndexOf('\n\n');
+      const titleBreak = segment.lastIndexOf('\n#');
+      const listBreak = segment.lastIndexOf('\n-');
+      const numBreak = segment.lastIndexOf('\n1.');
+      
+      // 找到最合适的分割点
+      let bestBreak = -1;
+      if (paragraphBreak > segment.length - 200) bestBreak = searchStart + paragraphBreak;
+      else if (titleBreak > segment.length - 200) bestBreak = searchStart + titleBreak;
+      else if (listBreak > segment.length - 200) bestBreak = searchStart + listBreak;
+      else if (numBreak > segment.length - 200) bestBreak = searchStart + numBreak;
+      
+      if (bestBreak > searchStart) {
+        endIndex = bestBreak + 2; // 包含分隔符
+      }
+    }
+    
+    chunks.push({
+      text: content.substring(startIndex, endIndex),
+      startIndex,
+      endIndex
+    });
+    
+    // 下一次从当前块结束位置减去重叠部分开始
+    startIndex = Math.max(endIndex - overlap, startIndex + 1);
+    
+    // 避免无限循环
+    if (startIndex >= endIndex) {
+      startIndex = endIndex;
+    }
+  }
+  
+  return chunks;
+}
+
+/**
+ * 从文档内容中提取知识点（主函数，处理分块逻辑）
  * @param {string} content - 文档内容
  * @param {string} sourceItemId - 来源文档ID
  * @param {number} sourcePage - 来源页码（可选）
@@ -125,20 +185,158 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     }
   }
 
-  // 限制内容长度（避免超出API限制）
-  const maxLength = 30000;
-  const contentSample = cleanedContent.length > maxLength 
-    ? cleanedContent.substring(0, maxLength) + '\n\n[内容已截断...]'
-    : cleanedContent;
+  // 检查是否需要分块处理（内容超过20000字符时）
+  const CHUNK_SIZE = 20000; // 每块大小，留出API响应空间
+  const CHUNK_OVERLAP = 1000; // 块之间重叠，避免知识点被截断
+  
+  let allKnowledgeItems = [];
+  
+  if (cleanedContent.length <= CHUNK_SIZE) {
+    // 内容不长，直接提取
+    allKnowledgeItems = await extractKnowledgeFromChunk(
+      cleanedContent,
+      sourceItemId,
+      0,
+      userApiKey
+    );
+  } else {
+    // 内容过长，分块提取
+    console.log('[提取] 内容过长，开始分块提取', {
+      sourceItemId,
+      originalContentLength: content.length,
+      cleanedContentLength: cleanedContent.length,
+      chunkSize: CHUNK_SIZE,
+      chunkOverlap: CHUNK_OVERLAP,
+      estimatedChunks: Math.ceil(cleanedContent.length / (CHUNK_SIZE - CHUNK_OVERLAP))
+    });
+    
+    const chunks = splitContentIntoChunks(cleanedContent, CHUNK_SIZE, CHUNK_OVERLAP);
+    console.log('[提取] 内容分块完成', {
+      sourceItemId,
+      totalChunks: chunks.length,
+      chunks: chunks.map((chunk, index) => ({
+        index,
+        length: chunk.text.length,
+        startIndex: chunk.startIndex,
+        endIndex: chunk.endIndex,
+        preview: chunk.text.substring(0, 100)
+      }))
+    });
+    
+    // 逐个处理每个块
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log('[提取] 处理内容块', {
+        sourceItemId,
+        chunkIndex: i + 1,
+        totalChunks: chunks.length,
+        chunkLength: chunk.text.length,
+        chunkStart: chunk.startIndex,
+        chunkEnd: chunk.endIndex,
+        progress: `${i + 1}/${chunks.length}`
+      });
+      
+      try {
+        const chunkKnowledgeItems = await extractKnowledgeFromChunk(
+          chunk.text,
+          sourceItemId,
+          i,
+          userApiKey
+        );
+        
+        console.log('[提取] 块提取完成', {
+          sourceItemId,
+          chunkIndex: i + 1,
+          totalChunks: chunks.length,
+          extractedCount: chunkKnowledgeItems.length,
+          totalExtractedSoFar: allKnowledgeItems.length + chunkKnowledgeItems.length,
+          progress: `${i + 1}/${chunks.length}`
+        });
+        
+        allKnowledgeItems = allKnowledgeItems.concat(chunkKnowledgeItems);
+        
+        // 块之间稍作延迟，避免API频率限制
+        if (i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (chunkError) {
+        console.error('[提取] ❌ 块提取失败', {
+          sourceItemId,
+          chunkIndex: i + 1,
+          totalChunks: chunks.length,
+          error: chunkError.message,
+          errorName: chunkError.name,
+          chunkLength: chunk.text.length,
+          isTimeout: chunkError.message.includes('timeout') || chunkError.message.includes('超时')
+        });
+        // 某个块失败，继续处理其他块
+        // 不中断整个提取过程
+      }
+    }
+    
+    console.log('[提取] 所有块处理完成', {
+      sourceItemId,
+      totalChunks: chunks.length,
+      totalExtractedCount: allKnowledgeItems.length,
+      averagePerChunk: chunks.length > 0 ? (allKnowledgeItems.length / chunks.length).toFixed(1) : 0,
+      recommendation: allKnowledgeItems.length === 0 
+        ? '所有块提取都未生成知识点，请检查文档内容或查看详细日志' 
+        : `成功从 ${chunks.length} 个块中提取 ${allKnowledgeItems.length} 个知识点`
+    });
+  }
+  
+  return allKnowledgeItems;
+}
 
-  console.log('[提取] 准备调用AI API', {
+/**
+ * 从单个内容块提取知识点（内部函数，只处理单个块）
+ * @param {string} contentChunk - 内容块（已经过预处理）
+ * @param {string} sourceItemId - 来源文档ID
+ * @param {number} chunkIndex - 块索引
+ * @param {string} userApiKey - 用户API Key（可选）
+ * @returns {Promise<Array>} 提取的知识点数组
+ */
+async function extractKnowledgeFromChunk(contentChunk, sourceItemId, chunkIndex, userApiKey = null) {
+  const chunkId = chunkIndex > 0 ? `${sourceItemId}-chunk${chunkIndex}` : sourceItemId;
+  
+  console.log('[提取] extractKnowledgeFromChunk 开始', {
     sourceItemId,
-    originalContentLength: content.length,
-    cleanedContentLength: cleanedContent.length,
+    chunkIndex,
+    chunkId,
+    chunkLength: contentChunk ? contentChunk.length : 0,
+    hasUserApiKey: !!userApiKey,
+    chunkPreview: contentChunk ? contentChunk.substring(0, 200) : 'null'
+  });
+  
+  if (!contentChunk || contentChunk.trim().length === 0) {
+    console.warn('[提取] ⚠️ 内容块为空，返回空数组', { sourceItemId, chunkIndex });
+    return [];
+  }
+
+  // 清理首尾空白（预处理应该已经完成，但再做一次确保）
+  let cleanedChunk = contentChunk.trim();
+  
+  // 限制单个块的长度（双重保险，避免超出API限制）
+  const maxLength = 25000; // 单个块的最大长度，留出API响应空间
+  const contentSample = cleanedChunk.length > maxLength 
+    ? cleanedChunk.substring(0, maxLength) + '\n\n[内容已截断...]'
+    : cleanedChunk;
+  
+  if (cleanedChunk.length > maxLength) {
+    console.warn('[提取] ⚠️ 内容块过长，需要截断', {
+      sourceItemId,
+      chunkIndex,
+      originalLength: cleanedChunk.length,
+      truncatedLength: maxLength
+    });
+  }
+
+  console.log('[提取] 准备调用AI API（块）', {
+    sourceItemId,
+    chunkIndex,
+    chunkLength: cleanedChunk.length,
     sampleLength: contentSample.length,
-    isTruncated: cleanedContent.length > maxLength,
-    removedLength: content.length - cleanedContent.length,
-    contentPreview: contentSample.substring(0, 1000)
+    isTruncated: cleanedChunk.length > maxLength
   });
 
   const messages = [
@@ -176,10 +374,13 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
   ];
 
   try {
-    console.log('[提取] 调用 DeepSeek API', { 
-      sourceItemId, 
+    console.log('[提取] 调用 DeepSeek API（块）', { 
+      sourceItemId,
+      chunkIndex,
       maxTokens: 4000,
-      contentLength: content.length,
+      contentLength: cleanedChunk.length,
+      sampleLength: contentSample.length,
+      timeout: 180000,
       hasUserApiKey: !!userApiKey
     });
     
@@ -188,19 +389,24 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       response = await callDeepSeekAPI(messages, {
         max_tokens: 4000,
         temperature: 0.3,
-        userApiKey
+        userApiKey,
+        timeout: 180000 // 知识提取任务使用180秒（3分钟）超时，处理大型文档
       });
     } catch (apiError) {
       // 详细记录API调用错误
-      console.error('[提取] ❌ DeepSeek API调用失败', {
+      console.error('[提取] ❌ DeepSeek API调用失败（块）', {
         sourceItemId,
+        chunkIndex,
         error: apiError.message,
         errorName: apiError.name,
         hasUserApiKey: !!userApiKey,
+        chunkLength: cleanedChunk.length,
+        sampleLength: contentSample.length,
         possibleCauses: {
           apiKey: apiError.message.includes('API Key') ? 'API Key未配置或无效' : null,
-          network: apiError.message.includes('网络') || apiError.message.includes('timeout') ? '网络连接问题' : null,
-          rateLimit: apiError.message.includes('频率') || apiError.message.includes('429') ? 'API请求频率过高' : null
+          network: apiError.message.includes('网络') || apiError.message.includes('timeout') || apiError.message.includes('超时') ? '网络连接问题或超时' : null,
+          rateLimit: apiError.message.includes('频率') || apiError.message.includes('429') ? 'API请求频率过高' : null,
+          contentSize: cleanedChunk.length > 20000 ? '内容块过大，可能需要进一步分块' : null
         }
       });
       throw apiError; // 重新抛出，让上层处理
@@ -215,8 +421,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       throw new Error('AI API返回空响应');
     }
     
-    console.log('[提取] AI API 调用成功', {
+    console.log('[提取] AI API 调用成功（块）', {
       sourceItemId,
+      chunkIndex,
       responseLength: response ? response.length : 0,
       responsePreview: response ? response.substring(0, 500) : 'null',
       fullResponse: response ? response.substring(0, 3000) : 'null' // 记录前3000字符用于调试
@@ -226,8 +433,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       let jsonString = jsonMatch[0];
-      console.log('[提取] 找到JSON数组', {
+      console.log('[提取] 找到JSON数组（块）', {
         sourceItemId,
+        chunkIndex,
         jsonStringLength: jsonString.length,
         jsonPreview: jsonString.substring(0, 300)
       });
@@ -236,8 +444,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       let knowledgeItems;
       try {
         knowledgeItems = JSON.parse(jsonString);
-        console.log('[提取] ✅ JSON解析成功', {
+        console.log('[提取] ✅ JSON解析成功（块）', {
           sourceItemId,
+          chunkIndex,
           knowledgeItemsCount: Array.isArray(knowledgeItems) ? knowledgeItems.length : 0,
           isArray: Array.isArray(knowledgeItems)
         });
@@ -342,8 +551,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       
       // 验证和清洗数据
       if (!Array.isArray(knowledgeItems)) {
-        console.error('[提取] ❌ 解析结果不是数组', {
+        console.error('[提取] ❌ 解析结果不是数组（块）', {
           sourceItemId,
+          chunkIndex,
           knowledgeItemsType: typeof knowledgeItems,
           knowledgeItems,
           responsePreview: response ? response.substring(0, 1000) : 'null'
@@ -362,8 +572,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
         const isValid = hasTitle && hasContent;
         
         if (!isValid) {
-          console.warn('[提取] ⚠️ 知识点验证失败', {
+          console.warn('[提取] ⚠️ 知识点验证失败（块）', {
             sourceItemId,
+            chunkIndex,
             index,
             hasTitle,
             hasContent,
@@ -389,8 +600,9 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       const filtered = knowledgeItems.filter(item => item.title && item.content);
       const afterFilter = filtered.length;
       
-      console.log('[提取] 数据验证和清洗', {
+      console.log('[提取] 数据验证和清洗（块）', {
         sourceItemId,
+        chunkIndex,
         beforeFilter,
         afterFilter,
         filteredOut: beforeFilter - afterFilter,
@@ -435,20 +647,28 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       
       // 如果清理后没有知识点，记录诊断信息
       if (cleaned.length === 0) {
-        console.warn('[提取] ⚠️ 提取完成但未生成任何知识点', {
+        console.warn('[提取] ⚠️ 提取完成但未生成任何知识点（块）', {
           sourceItemId,
-          originalContentLength: content.length,
-          cleanedContentLength: cleanedContent.length,
-          contentPreview: cleanedContent.substring(0, 500),
+          chunkIndex,
+          chunkLength: cleanedChunk.length,
+          sampleLength: contentSample.length,
+          contentPreview: cleanedChunk.substring(0, 500),
           possibleReasons: [
-            '文档内容可能主要是格式信息或免责声明',
-            '内容可能太短或质量不高',
-            'AI可能判断内容不适合提取知识点',
-            '内容可能不包含可提取的知识点'
+            '当前块内容可能主要是格式信息或免责声明',
+            '内容块可能太短或质量不高',
+            'AI可能判断当前块不适合提取知识点',
+            '内容块可能不包含可提取的知识点'
           ],
-          recommendation: '请检查原始文档内容是否包含实际的知识点信息'
+          recommendation: '继续处理其他块，或检查原始文档内容'
         });
       }
+      
+      console.log('[提取] ✅ 块提取完成', {
+        sourceItemId,
+        chunkIndex,
+        extractedCount: cleaned.length,
+        sampleTitles: cleaned.slice(0, 3).map(item => item.title)
+      });
       
       return cleaned;
     }
@@ -546,11 +766,12 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     // 增强错误日志，特别针对Railway环境
     const errorDetails = {
       sourceItemId,
+      chunkIndex,
       error: error.message,
       errorName: error.name,
       stack: error.stack,
-      originalContentLength: content ? content.length : 0,
-      cleanedContentLength: cleanedContent ? cleanedContent.length : 0,
+      chunkLength: cleanedChunk ? cleanedChunk.length : 0,
+      sampleLength: contentSample ? contentSample.length : 0,
       environment: {
         nodeEnv: process.env.NODE_ENV,
         hasDatabaseUrl: !!process.env.DATABASE_URL,

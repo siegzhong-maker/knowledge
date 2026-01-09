@@ -75,6 +75,10 @@ async function callDeepSeekAPI(messages, options = {}) {
 
   try {
     const startTime = Date.now();
+    // 增加超时设置（Railway环境和大文档需要更长时间）
+    // 对于知识提取任务，使用更长的超时（180秒）
+    // 普通任务60秒，知识提取任务180秒
+    const timeoutMs = options.timeout || 120000; // 默认120秒（2分钟），知识提取任务可指定180秒
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -82,8 +86,7 @@ async function callDeepSeekAPI(messages, options = {}) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
-      // 增加超时设置（Railway环境可能需要更长时间）
-      signal: AbortSignal.timeout(60000) // 60秒超时
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
     const duration = Date.now() - startTime;
