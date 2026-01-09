@@ -122,30 +122,65 @@ export async function loadKnowledgeItems(filters = {}) {
  * 批量确认所有待确认的知识点
  */
 async function handleBatchConfirm() {
+  console.log('[批量确认] 函数开始执行');
+  
   try {
-    // 获取当前知识库ID
+    // 获取当前知识库ID（异步导入，失败时使用降级方案）
     let currentKnowledgeBaseId = null;
     try {
-      const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
-      currentKnowledgeBaseId = getCurrentKnowledgeBaseId();
-    } catch (e) {
-      console.warn('无法获取当前知识库ID:', e);
+      console.log('[批量确认] 正在导入 knowledge-bases.js 模块...');
+      const knowledgeBasesModule = await import('./knowledge-bases.js');
+      
+      if (knowledgeBasesModule && typeof knowledgeBasesModule.getCurrentKnowledgeBaseId === 'function') {
+        try {
+          currentKnowledgeBaseId = knowledgeBasesModule.getCurrentKnowledgeBaseId();
+          console.log('[批量确认] 成功获取知识库ID:', currentKnowledgeBaseId);
+        } catch (callError) {
+          console.warn('[批量确认] 调用 getCurrentKnowledgeBaseId 时出错，将使用 null:', callError);
+          // 降级：使用 null，函数继续执行
+        }
+      } else {
+        console.warn('[批量确认] getCurrentKnowledgeBaseId 不是一个函数或模块导出异常，将使用 null');
+        // 降级：使用 null，函数继续执行
+      }
+    } catch (importError) {
+      console.warn('[批量确认] 导入 knowledge-bases.js 模块失败，将使用 null 作为知识库ID:', importError);
+      console.warn('[批量确认] 这可能是因为模块不存在或网络问题，但批量确认操作仍会继续执行');
+      // 降级方案：使用 null 作为知识库ID，这样 API 会返回所有知识库的待确认项
+      // 函数继续执行，不会因为导入失败而中断
+    }
+    
+    // 如果知识库ID获取失败，使用 null（表示查询所有知识库）
+    if (currentKnowledgeBaseId === undefined || currentKnowledgeBaseId === '') {
+      console.log('[批量确认] 知识库ID为空或未定义，将查询所有知识库的待确认项');
+      currentKnowledgeBaseId = null;
     }
 
     // 调用 API 获取所有待确认的知识点（不仅仅是当前页）
-    const response = await knowledgeAPI.getItems({
-      status: 'pending',
-      knowledgeBaseId: currentKnowledgeBaseId,
-      limit: 10000, // 设置一个足够大的 limit 来获取所有待确认项
-      page: 1
-    });
+    console.log('[批量确认] 正在获取待确认的知识点列表...');
+    let response;
+    try {
+      response = await knowledgeAPI.getItems({
+        status: 'pending',
+        knowledgeBaseId: currentKnowledgeBaseId,
+        limit: 10000, // 设置一个足够大的 limit 来获取所有待确认项
+        page: 1
+      });
+      console.log('[批量确认] API 响应:', response);
+    } catch (apiError) {
+      console.error('[批量确认] 获取知识点列表时 API 调用失败:', apiError);
+      throw new Error('无法获取待确认的知识点列表: ' + (apiError.message || '网络错误'));
+    }
 
-    if (!response.success || !response.data || response.data.length === 0) {
+    if (!response || !response.success || !response.data || response.data.length === 0) {
+      console.log('[批量确认] 没有待确认的知识点');
       if (window.showToast) {
         window.showToast('没有待确认的知识点', 'info');
       }
       return;
     }
+    
+    console.log('[批量确认] 找到', response.data.length, '个待确认的知识点');
 
     const ids = response.data.map(item => item.id);
     const totalPendingCount = ids.length;
@@ -158,27 +193,41 @@ async function handleBatchConfirm() {
       : knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
     
     // 显示确认对话框，明确说明实际会确认的数量
-    let confirmed;
+    let confirmed = false;
     try {
+      console.log('[批量确认] 准备显示确认对话框');
+      
+      // 检查 showConfirm 函数是否可用
+      if (typeof showConfirm !== 'function') {
+        console.error('[批量确认] showConfirm 函数不可用');
+        throw new Error('确认对话框功能不可用，请刷新页面重试');
+      }
+      
       let confirmMessage = `将确认整个知识库中所有待确认的知识点，共 ${totalPendingCount} 个。`;
       if (totalPendingCount !== filteredPendingCount) {
         confirmMessage += `\n\n当前筛选下显示 ${filteredPendingCount} 个。`;
       }
       confirmMessage += `\n\n确认后，这些知识点将可以在智能问答中使用。`;
+      
       confirmed = await showConfirm(
         confirmMessage,
         { title: '批量确认', type: 'warning' }
       );
+      
+      console.log('[批量确认] 用户确认结果:', confirmed);
     } catch (error) {
       // 用户取消了操作，直接返回，不显示错误提示
-      if (error === false || (error instanceof Error && error.message === '用户取消')) {
+      if (error === false || (error instanceof Error && (error.message === '用户取消' || error.message.includes('cancel')))) {
+        console.log('[批量确认] 用户取消了操作');
         return;
       }
       // 其他错误继续抛出
-      throw error;
+      console.error('[批量确认] 显示确认对话框时出错:', error);
+      throw new Error('无法显示确认对话框: ' + (error.message || '未知错误'));
     }
     
     if (!confirmed) {
+      console.log('[批量确认] 用户未确认，取消操作');
       return;
     }
 
@@ -196,28 +245,58 @@ async function handleBatchConfirm() {
     }
 
     // 调用批量确认API
-    const confirmResponse = await knowledgeAPI.batchConfirm(ids);
+    console.log('[批量确认] 正在调用批量确认 API，待确认 ID 数量:', ids.length);
+    let confirmResponse;
+    try {
+      // 检查 batchConfirm 方法是否存在
+      if (!knowledgeAPI || typeof knowledgeAPI.batchConfirm !== 'function') {
+        throw new Error('批量确认 API 方法不可用');
+      }
+      
+      confirmResponse = await knowledgeAPI.batchConfirm(ids);
+      console.log('[批量确认] API 响应:', confirmResponse);
+    } catch (apiError) {
+      console.error('[批量确认] 批量确认 API 调用失败:', apiError);
+      throw new Error('批量确认请求失败: ' + (apiError.message || '网络错误'));
+    }
+    
+    if (!confirmResponse) {
+      throw new Error('批量确认 API 返回了空响应');
+    }
     
     if (confirmResponse.success) {
       // 显示成功提示
+      const confirmedCount = confirmResponse.count || ids.length;
+      console.log('[批量确认] 成功确认', confirmedCount, '个知识点');
+      
       if (window.showToast) {
-        const confirmedCount = confirmResponse.count || ids.length;
         window.showToast(`成功确认 ${confirmedCount} 个知识点，现在可以在智能问答中使用`, 'success');
       }
       
       // 清除API缓存，确保获取最新数据
+      console.log('[批量确认] 清除 API 缓存并重新加载知识列表');
       clearAPICache();
       // 重置页码为1，确保从第一页开始加载
       knowledgeState.currentPage = 1;
       // 重新加载知识列表（缓存已清除，会获取最新数据）
-      await loadKnowledgeItems();
+      try {
+        await loadKnowledgeItems();
+        console.log('[批量确认] 知识列表重新加载完成');
+      } catch (loadError) {
+        console.error('[批量确认] 重新加载知识列表时出错:', loadError);
+        // 即使重新加载失败，也显示成功消息，因为批量确认已经成功
+      }
     } else {
       // 显示失败提示
+      const errorMessage = confirmResponse.message || '批量确认失败';
+      console.error('[批量确认] API 返回失败:', errorMessage);
+      
       if (window.showToast) {
-        window.showToast(confirmResponse.message || '批量确认失败', 'error');
+        window.showToast(errorMessage, 'error');
       }
       
       // 恢复按钮状态
+      const batchConfirmBtn = document.getElementById('btn-batch-confirm-all');
       if (batchConfirmBtn) {
         batchConfirmBtn.disabled = false;
         batchConfirmBtn.innerHTML = `
@@ -228,54 +307,53 @@ async function handleBatchConfirm() {
           window.lucide.createIcons(batchConfirmBtn);
         }
       }
+      
+      throw new Error(errorMessage);
     }
   } catch (error) {
     // 如果用户取消了操作，不显示错误提示
-    if (error === false || error.message === '用户取消') {
+    if (error === false || (error instanceof Error && (error.message === '用户取消' || error.message.includes('cancel')))) {
+      console.log('[批量确认] 操作被用户取消');
       return;
     }
     
-    console.error('批量确认失败:', error);
+    // 记录详细的错误信息
+    console.error('[批量确认] 批量确认过程出错:', error);
+    console.error('[批量确认] 错误堆栈:', error.stack);
+    
+    // 显示用户友好的错误提示
+    const errorMessage = error instanceof Error ? error.message : String(error);
     if (window.showToast) {
-      window.showToast('批量确认失败: ' + (error.message || '未知错误'), 'error');
+      window.showToast('批量确认失败: ' + (errorMessage || '未知错误'), 'error');
     }
     
     // 恢复按钮状态
+    console.log('[批量确认] 恢复按钮状态');
     const batchConfirmBtn = document.getElementById('btn-batch-confirm-all');
     if (batchConfirmBtn) {
       batchConfirmBtn.disabled = false;
-      // 尝试重新获取待确认项数量，如果失败则使用当前显示的数量
-      try {
-        let currentKnowledgeBaseId = null;
-        try {
-          const { getCurrentKnowledgeBaseId } = await import('./knowledge-bases.js');
-          currentKnowledgeBaseId = getCurrentKnowledgeBaseId();
-        } catch (e) {
-          // 忽略获取知识库ID的错误
-        }
-        const response = await knowledgeAPI.getItems({
-          status: 'pending',
-          knowledgeBaseId: currentKnowledgeBaseId,
-          limit: 10000,
-          page: 1
-        });
-        // 恢复按钮文案为"批量确认所有待确认"（不再显示数量）
-        batchConfirmBtn.innerHTML = `
-          <i data-lucide="check-circle-2" size="16"></i>
-          <span>批量确认所有待确认</span>
-        `;
-      } catch (e) {
-        // 如果获取失败，使用当前显示的数量作为后备（但文案已改为"所有待确认"）
-        batchConfirmBtn.innerHTML = `
-          <i data-lucide="check-circle-2" size="16"></i>
-          <span>批量确认所有待确认</span>
-        `;
-      }
+      
+      // 恢复按钮文案为"批量确认所有待确认"
+      batchConfirmBtn.innerHTML = `
+        <i data-lucide="check-circle-2" size="16"></i>
+        <span>批量确认所有待确认</span>
+      `;
+      
+      // 重新初始化图标
       if (window.lucide) {
         window.lucide.createIcons(batchConfirmBtn);
       }
+      
+      console.log('[批量确认] 按钮状态已恢复');
+    } else {
+      console.warn('[批量确认] 无法找到按钮元素来恢复状态');
     }
+    
+    // 重新抛出错误，让调用者知道操作失败
+    throw error;
   }
+  
+  console.log('[批量确认] 函数执行完成');
 }
 
 /**
@@ -683,10 +761,87 @@ export function renderKnowledgeView() {
 
     // 绑定批量确认按钮
     if (filteredPendingCount > 0) {
-      const batchConfirmBtn = pendingNotice.querySelector('#btn-batch-confirm-all');
-      if (batchConfirmBtn) {
-        batchConfirmBtn.addEventListener('click', handleBatchConfirm);
-      }
+      // 使用 requestAnimationFrame 确保 DOM 完全渲染后再绑定事件
+      requestAnimationFrame(() => {
+        const batchConfirmBtn = pendingNotice.querySelector('#btn-batch-confirm-all');
+        if (batchConfirmBtn) {
+          console.log('[批量确认] 找到按钮元素，正在绑定事件监听器');
+          
+          // 使用包装函数确保错误能被捕获，并防止事件冒泡
+          const clickHandler = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[批量确认] 按钮被点击，开始执行批量确认');
+            
+            // 立即显示加载状态，给用户反馈
+            const btn = e.currentTarget;
+            if (btn && !btn.disabled) {
+              btn.disabled = true;
+              const originalHTML = btn.innerHTML;
+              btn.innerHTML = `
+                <i data-lucide="loader-2" size="16" class="animate-spin"></i>
+                <span>处理中...</span>
+              `;
+              if (window.lucide) {
+                window.lucide.createIcons(btn);
+              }
+              
+              let operationCompleted = false;
+              try {
+                await handleBatchConfirm();
+                // 标记操作已完成（成功或用户取消）
+                operationCompleted = true;
+              } catch (error) {
+                console.error('[批量确认] 处理函数执行出错:', error);
+                
+                // 判断是否是用户取消操作
+                const isUserCancel = error === false || 
+                  (error instanceof Error && 
+                   (error.message === '用户取消' || error.message.includes('cancel')));
+                
+                // 如果不是用户取消，显示错误提示
+                if (!isUserCancel && window.showToast) {
+                  window.showToast('批量确认失败: ' + (error.message || '未知错误'), 'error');
+                }
+                
+                // 标记操作已完成（虽然失败了，但已经处理）
+                operationCompleted = true;
+              } finally {
+                // 延迟检查按钮状态，给 handleBatchConfirm 中的列表重新加载一些时间
+                // 如果操作成功完成，列表会重新加载，按钮会被重新渲染，无需恢复
+                // 如果操作未成功完成（用户取消、没有待确认项等），需要恢复按钮状态
+                setTimeout(() => {
+                  const currentBtn = document.getElementById('btn-batch-confirm-all');
+                  // 如果按钮仍然存在且 disabled，说明操作没有成功完成（列表未重新加载）
+                  // 需要恢复按钮状态
+                  if (currentBtn && currentBtn.disabled && operationCompleted) {
+                    console.log('[批量确认] 操作已完成但按钮仍 disabled，恢复按钮状态');
+                    currentBtn.disabled = false;
+                    currentBtn.innerHTML = `
+                      <i data-lucide="check-circle-2" size="16"></i>
+                      <span>批量确认所有待确认</span>
+                    `;
+                    if (window.lucide) {
+                      window.lucide.createIcons(currentBtn);
+                    }
+                  }
+                }, 300);
+              }
+            }
+          };
+          
+          // 移除可能存在的旧监听器（通过存储引用）
+          if (batchConfirmBtn._clickHandler) {
+            batchConfirmBtn.removeEventListener('click', batchConfirmBtn._clickHandler);
+          }
+          batchConfirmBtn._clickHandler = clickHandler;
+          batchConfirmBtn.addEventListener('click', clickHandler);
+          
+          console.log('[批量确认] 事件监听器已成功绑定');
+        } else {
+          console.error('[批量确认] 未找到按钮元素 #btn-batch-confirm-all，无法绑定事件');
+        }
+      });
     }
   }
 
