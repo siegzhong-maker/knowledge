@@ -16,7 +16,8 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     sourcePage,
     contentLength: content ? content.length : 0,
     hasUserApiKey: !!userApiKey,
-    userApiKeyPreview: userApiKey ? `${userApiKey.substring(0, 8)}...` : 'none'
+    userApiKeyPreview: userApiKey ? `${userApiKey.substring(0, 8)}...` : 'none',
+    contentPreview: content ? content.substring(0, 500) : 'null'
   });
   
   if (!content || content.trim().length === 0) {
@@ -24,17 +25,120 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     return [];
   }
 
+  // 内容预处理：清理智能纪要中的格式干扰
+  let cleanedContent = content;
+  const originalLength = content.length;
+  let preprocessingLog = {
+    removedPatterns: [],
+    removedLength: 0,
+    finalLength: originalLength
+  };
+  
+  // 移除智能纪要中常见的非内容部分
+  const patternsToRemove = [
+    {
+      pattern: /智能纪要权益介绍[^]*?该内容不支持导出查看[^]*?/g,
+      description: '智能纪要权益介绍部分'
+    },
+    {
+      pattern: /智能纪要由AI生成[^]*?请谨慎甄别后使用[^]*?/g,
+      description: 'AI生成免责声明'
+    },
+    {
+      pattern: /\[该内容不支持导出查看\]/g,
+      description: '不支持导出标记'
+    },
+    {
+      pattern: /权益介绍[^]*?不支持导出/g,
+      description: '权益介绍段落'
+    },
+    {
+      pattern: /^[\s\n]*智能纪要[^\n]*\n+/gm,
+      description: '文档头部标题重复'
+    },
+    {
+      pattern: /\n{3,}/g,
+      description: '多余空行'
+    }
+  ];
+  
+  patternsToRemove.forEach(({ pattern, description }) => {
+    const beforeLength = cleanedContent.length;
+    cleanedContent = cleanedContent.replace(pattern, '');
+    const removedLength = beforeLength - cleanedContent.length;
+    if (removedLength > 0) {
+      preprocessingLog.removedPatterns.push({
+        description,
+        removedLength
+      });
+      preprocessingLog.removedLength += removedLength;
+      console.log('[提取] 清理格式干扰', {
+        sourceItemId,
+        description,
+        removedLength,
+        remainingLength: cleanedContent.length
+      });
+    }
+  });
+  
+  // 清理首尾空白
+  cleanedContent = cleanedContent.trim();
+  preprocessingLog.finalLength = cleanedContent.length;
+  
+  // 记录预处理结果
+  console.log('[提取] 内容预处理完成', {
+    sourceItemId,
+    originalLength,
+    cleanedLength: cleanedContent.length,
+    removedLength: preprocessingLog.removedLength,
+    removedPatterns: preprocessingLog.removedPatterns,
+    reductionPercent: originalLength > 0 
+      ? ((preprocessingLog.removedLength / originalLength) * 100).toFixed(2) + '%'
+      : '0%'
+  });
+  
+  // 检查清理后的内容是否仍然有效
+  const minContentLength = 100;
+  if (cleanedContent.length < minContentLength) {
+    console.warn('[提取] ⚠️ 清理后内容过短，可能不适合提取', {
+      sourceItemId,
+      originalLength,
+      cleanedLength: cleanedContent.length,
+      minRequiredLength: minContentLength,
+      removedLength: preprocessingLog.removedLength,
+      contentPreview: cleanedContent.substring(0, 300),
+      recommendation: '文档内容可能主要是格式信息，缺少实际内容。建议检查原始文档。'
+    });
+    // 如果清理后内容过短，但原始内容足够，说明清理过度，使用原始内容
+    if (originalLength >= minContentLength) {
+      console.warn('[提取] ⚠️ 检测到清理过度，使用原始内容', {
+        sourceItemId,
+        originalLength,
+        cleanedLength: cleanedContent.length
+      });
+      cleanedContent = content.trim();
+      preprocessingLog = {
+        removedPatterns: [],
+        removedLength: 0,
+        finalLength: cleanedContent.length
+      };
+    }
+  }
+
   // 限制内容长度（避免超出API限制）
   const maxLength = 30000;
-  const contentSample = content.length > maxLength 
-    ? content.substring(0, maxLength) + '\n\n[内容已截断...]'
-    : content;
+  const contentSample = cleanedContent.length > maxLength 
+    ? cleanedContent.substring(0, maxLength) + '\n\n[内容已截断...]'
+    : cleanedContent;
 
   console.log('[提取] 准备调用AI API', {
     sourceItemId,
-    contentLength: content.length,
+    originalContentLength: content.length,
+    cleanedContentLength: cleanedContent.length,
     sampleLength: contentSample.length,
-    isTruncated: content.length > maxLength
+    isTruncated: cleanedContent.length > maxLength,
+    removedLength: content.length - cleanedContent.length,
+    contentPreview: contentSample.substring(0, 1000)
   });
 
   const messages = [
@@ -114,7 +218,8 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
     console.log('[提取] AI API 调用成功', {
       sourceItemId,
       responseLength: response ? response.length : 0,
-      responsePreview: response ? response.substring(0, 200) : 'null'
+      responsePreview: response ? response.substring(0, 500) : 'null',
+      fullResponse: response ? response.substring(0, 3000) : 'null' // 记录前3000字符用于调试
     });
 
     // 尝试解析JSON响应
@@ -240,12 +345,47 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
         console.error('[提取] ❌ 解析结果不是数组', {
           sourceItemId,
           knowledgeItemsType: typeof knowledgeItems,
-          knowledgeItems
+          knowledgeItems,
+          responsePreview: response ? response.substring(0, 1000) : 'null'
         });
         return [];
       }
       
       const beforeFilter = knowledgeItems.length;
+      
+      // 详细记录每个知识点验证过程
+      const validationDetails = knowledgeItems.map((item, index) => {
+        const hasTitle = !!item.title && item.title.trim().length > 0;
+        const hasContent = !!item.content && item.content.trim().length > 0;
+        const titleLength = item.title ? item.title.length : 0;
+        const contentLength = item.content ? item.content.length : 0;
+        const isValid = hasTitle && hasContent;
+        
+        if (!isValid) {
+          console.warn('[提取] ⚠️ 知识点验证失败', {
+            sourceItemId,
+            index,
+            hasTitle,
+            hasContent,
+            titleLength,
+            contentLength,
+            itemPreview: {
+              title: item.title ? item.title.substring(0, 50) : 'null',
+              content: item.content ? item.content.substring(0, 100) : 'null'
+            }
+          });
+        }
+        
+        return {
+          index,
+          hasTitle,
+          hasContent,
+          titleLength,
+          contentLength,
+          isValid
+        };
+      });
+      
       const filtered = knowledgeItems.filter(item => item.title && item.content);
       const afterFilter = filtered.length;
       
@@ -253,8 +393,26 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
         sourceItemId,
         beforeFilter,
         afterFilter,
-        filteredOut: beforeFilter - afterFilter
+        filteredOut: beforeFilter - afterFilter,
+        validationDetails,
+        invalidItems: validationDetails.filter(v => !v.isValid).map(v => ({
+          index: v.index,
+          reason: !v.hasTitle ? '缺少标题' : !v.hasContent ? '缺少内容' : '未知'
+        }))
       });
+      
+      if (afterFilter === 0 && beforeFilter > 0) {
+        console.error('[提取] ❌ 所有知识点都被过滤掉', {
+          sourceItemId,
+          originalCount: beforeFilter,
+          filteredCount: afterFilter,
+          reasons: validationDetails.map(v => ({
+            index: v.index,
+            hasTitle: v.hasTitle,
+            hasContent: v.hasContent
+          }))
+        });
+      }
       
       const cleaned = filtered.map(item => ({
         title: item.title.trim(),
@@ -271,36 +429,117 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       console.log('[提取] ✅ 提取完成', {
         sourceItemId,
         extractedCount: cleaned.length,
-        sampleTitles: cleaned.slice(0, 3).map(item => item.title)
+        sampleTitles: cleaned.slice(0, 3).map(item => item.title),
+        allTitles: cleaned.map(item => item.title?.substring(0, 50))
       });
+      
+      // 如果清理后没有知识点，记录诊断信息
+      if (cleaned.length === 0) {
+        console.warn('[提取] ⚠️ 提取完成但未生成任何知识点', {
+          sourceItemId,
+          originalContentLength: content.length,
+          cleanedContentLength: cleanedContent.length,
+          contentPreview: cleanedContent.substring(0, 500),
+          possibleReasons: [
+            '文档内容可能主要是格式信息或免责声明',
+            '内容可能太短或质量不高',
+            'AI可能判断内容不适合提取知识点',
+            '内容可能不包含可提取的知识点'
+          ],
+          recommendation: '请检查原始文档内容是否包含实际的知识点信息'
+        });
+      }
       
       return cleaned;
     }
 
-    // 如果解析失败，返回空数组
-    console.warn('[提取] ⚠️ 响应中没有找到JSON数组', {
+    // 如果解析失败，返回空数组并记录详细诊断信息
+    const diagnosticInfo = {
       sourceItemId,
-      responsePreview: response.substring(0, 500),
       responseLength: response.length,
-      fullResponse: response.substring(0, 2000) // 记录前2000字符以便调试
-    });
+      responsePreview: response.substring(0, 500),
+      fullResponse: response.substring(0, 3000), // 记录前3000字符以便调试
+      hasJsonArray: /\[[\s\S]*\]/.test(response),
+      hasJsonObject: /\{[\s\S]*\}/.test(response),
+      containsErrorKeywords: {
+        error: response.includes('错误') || response.includes('error') || response.includes('Error'),
+        apiKey: response.includes('API Key') || response.includes('unauthorized') || response.includes('401'),
+        quota: response.includes('quota') || response.includes('额度') || response.includes('limit'),
+        rateLimit: response.includes('429') || response.includes('rate limit') || response.includes('频率')
+      },
+      possibleReasons: []
+    };
     
-    // 尝试从响应中提取更多信息
-    if (response.includes('错误') || response.includes('error') || response.includes('Error')) {
-      console.error('[提取] ❌ AI 返回了错误信息', {
-        sourceItemId,
-        errorMessage: response.substring(0, 1000)
-      });
-    }
-    
-    // 检查是否是API Key相关错误
-    if (response.includes('API Key') || response.includes('unauthorized') || response.includes('401')) {
+    // 分析可能的原因
+    if (diagnosticInfo.containsErrorKeywords.apiKey) {
+      diagnosticInfo.possibleReasons.push('API Key无效或未配置');
       console.error('[提取] ❌ 检测到API Key错误', {
         sourceItemId,
         responsePreview: response.substring(0, 500)
       });
       throw new Error('API Key无效或未配置，请检查设置');
     }
+    
+    if (diagnosticInfo.containsErrorKeywords.quota || diagnosticInfo.containsErrorKeywords.rateLimit) {
+      diagnosticInfo.possibleReasons.push('API配额用尽或请求频率过高');
+      console.error('[提取] ❌ 检测到API配额或频率限制错误', {
+        sourceItemId,
+        responsePreview: response.substring(0, 500)
+      });
+      throw new Error('API配额用尽或请求频率过高，请稍后重试');
+    }
+    
+    if (diagnosticInfo.containsErrorKeywords.error) {
+      diagnosticInfo.possibleReasons.push('AI返回了错误信息');
+      console.error('[提取] ❌ AI 返回了错误信息', {
+        sourceItemId,
+        errorMessage: response.substring(0, 1000)
+      });
+    }
+    
+    if (!diagnosticInfo.hasJsonArray && !diagnosticInfo.hasJsonObject) {
+      diagnosticInfo.possibleReasons.push('AI响应不包含JSON格式数据');
+      console.warn('[提取] ⚠️ 响应中没有找到JSON数组或对象', diagnosticInfo);
+    } else if (diagnosticInfo.hasJsonObject && !diagnosticInfo.hasJsonArray) {
+      diagnosticInfo.possibleReasons.push('AI返回了单个JSON对象而不是数组');
+      console.warn('[提取] ⚠️ AI返回了单个对象而不是数组', {
+        sourceItemId,
+        responsePreview: response.substring(0, 500)
+      });
+      // 尝试将单个对象转换为数组
+      try {
+        const jsonObjectMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonObjectMatch) {
+          const jsonObject = JSON.parse(jsonObjectMatch[0]);
+          console.log('[提取] 尝试将单个对象转换为数组', {
+            sourceItemId,
+            objectKeys: Object.keys(jsonObject)
+          });
+          // 如果对象包含知识点相关字段，尝试转换
+          if (jsonObject.title || jsonObject.content) {
+            return [jsonObject];
+          }
+        }
+      } catch (e) {
+        console.warn('[提取] 转换对象失败', { sourceItemId, error: e.message });
+      }
+    }
+    
+    // 检查响应是否包含非JSON文本说明
+    if (response.length > 0 && !diagnosticInfo.hasJsonArray && !diagnosticInfo.hasJsonObject) {
+      diagnosticInfo.possibleReasons.push('AI返回了纯文本说明而非JSON格式');
+      console.warn('[提取] ⚠️ 响应中没有找到JSON数组', diagnosticInfo);
+    }
+    
+    // 如果没有识别出原因，添加通用原因
+    if (diagnosticInfo.possibleReasons.length === 0) {
+      diagnosticInfo.possibleReasons.push('AI响应格式不符合预期，无法解析知识点');
+    }
+    
+    console.warn('[提取] ⚠️ 无法从AI响应中提取知识点', {
+      ...diagnosticInfo,
+      recommendation: '请查看Railway日志中的完整AI响应以获取更多信息'
+    });
     
     return [];
   } catch (error) {
@@ -310,27 +549,63 @@ async function extractKnowledgeFromContent(content, sourceItemId, sourcePage = n
       error: error.message,
       errorName: error.name,
       stack: error.stack,
+      originalContentLength: content ? content.length : 0,
+      cleanedContentLength: cleanedContent ? cleanedContent.length : 0,
       environment: {
         nodeEnv: process.env.NODE_ENV,
         hasDatabaseUrl: !!process.env.DATABASE_URL,
         isRailway: !!process.env.RAILWAY_ENVIRONMENT || !!process.env.RAILWAY_PROJECT_ID
       },
-      possibleCauses: {
-        apiKey: error.message.includes('API Key') || error.message.includes('未配置') ? 'API Key 未配置或无效' : null,
-        network: error.message.includes('fetch') || error.message.includes('network') || error.message.includes('timeout') ? '网络连接问题（Railway可能无法访问api.deepseek.com）' : null,
-        rateLimit: error.message.includes('429') || error.message.includes('频率') ? 'API 请求频率过高' : null,
-        content: error.message.includes('内容') ? '文档内容问题' : null
-      }
+      errorType: 'unknown',
+      possibleCauses: [],
+      recommendations: []
     };
+    
+    // 分类错误类型
+    if (error.message.includes('API Key') || error.message.includes('未配置')) {
+      errorDetails.errorType = 'apiKey';
+      errorDetails.possibleCauses.push('API Key 未配置或无效');
+      errorDetails.recommendations.push('请在设置中配置DeepSeek API Key');
+      errorDetails.recommendations.push('或在前端设置中配置个人API Key');
+    } else if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('timeout')) {
+      errorDetails.errorType = 'network';
+      errorDetails.possibleCauses.push('网络连接问题');
+      errorDetails.possibleCauses.push('Railway可能无法访问api.deepseek.com');
+      errorDetails.recommendations.push('检查网络连接');
+      errorDetails.recommendations.push('如果是Railway部署，检查服务网络配置');
+    } else if (error.message.includes('429') || error.message.includes('频率') || error.message.includes('quota')) {
+      errorDetails.errorType = 'rateLimit';
+      errorDetails.possibleCauses.push('API 请求频率过高');
+      errorDetails.possibleCauses.push('API配额可能已用尽');
+      errorDetails.recommendations.push('请稍后重试');
+      errorDetails.recommendations.push('检查API配额使用情况');
+    } else if (error.message.includes('内容') || error.message.includes('空响应')) {
+      errorDetails.errorType = 'content';
+      errorDetails.possibleCauses.push('文档内容问题');
+      errorDetails.possibleCauses.push('AI返回了空响应或无效响应');
+      errorDetails.recommendations.push('检查文档内容是否包含实际知识点');
+      errorDetails.recommendations.push('查看Railway日志中的AI完整响应');
+    } else {
+      errorDetails.possibleCauses.push('未知错误');
+      errorDetails.recommendations.push('查看Railway日志中的完整错误堆栈');
+      errorDetails.recommendations.push('访问 /api/diagnose/extraction 进行诊断');
+    }
     
     console.error('[提取] ❌ 知识提取失败', errorDetails);
     
-    // 如果是API Key问题，提供更明确的错误信息
-    if (error.message.includes('API Key')) {
-      throw new Error('知识提取失败：API Key未配置或无效。请在设置中配置DeepSeek API Key，或在前端设置中配置个人API Key。');
+    // 根据错误类型提供更明确的错误信息
+    let errorMessage = `知识提取失败: ${error.message}`;
+    if (errorDetails.errorType === 'apiKey') {
+      errorMessage = '知识提取失败：API Key未配置或无效。请在设置中配置DeepSeek API Key，或在前端设置中配置个人API Key。';
+    } else if (errorDetails.errorType === 'network') {
+      errorMessage = '知识提取失败：网络连接问题。请检查网络连接或稍后重试。';
+    } else if (errorDetails.errorType === 'rateLimit') {
+      errorMessage = '知识提取失败：API请求频率过高或配额用尽。请稍后重试或检查API配额。';
+    } else if (errorDetails.errorType === 'content') {
+      errorMessage = `知识提取失败：${error.message}。请检查文档内容或查看日志获取更多信息。`;
     }
     
-    throw new Error(`知识提取失败: ${error.message}`);
+    throw new Error(errorMessage);
   }
 }
 

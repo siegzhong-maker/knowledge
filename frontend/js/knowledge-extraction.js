@@ -582,6 +582,7 @@ export function handleExtractionProgress(docId, progress) {
       }
     }
   }
+}
 
 // 将核心方法暴露到全局，便于其他脚本在模块动态加载异常时直接调用
 if (typeof window !== 'undefined') {
@@ -591,7 +592,5 @@ if (typeof window !== 'undefined') {
     getExtractionStatus,
     handleExtractionProgress
   };
-}
-
 }
 
