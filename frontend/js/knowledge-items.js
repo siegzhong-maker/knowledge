@@ -664,7 +664,7 @@ export function renderKnowledgeView() {
     }
 
     // 绑定批量确认按钮
-    if (pendingCount > 0) {
+    if (filteredPendingCount > 0) {
       const batchConfirmBtn = pendingNotice.querySelector('#btn-batch-confirm-all');
       if (batchConfirmBtn) {
         batchConfirmBtn.addEventListener('click', handleBatchConfirm);
