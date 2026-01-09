@@ -146,12 +146,24 @@ async function handleBatchConfirm() {
     }
 
     const ids = response.data.map(item => item.id);
+    const totalPendingCount = ids.length;
     
-    // 显示确认对话框
+    // 获取当前筛选下显示的待确认数量（用于提示）
+    // 注意：在"待确认"筛选下，filteredItems 已经全部是 pending 状态
+    // 但这里需要考虑可能有分类筛选或搜索筛选，所以使用当前筛选结果的长度
+    const filteredPendingCount = knowledgeState.currentFilter === 'pending' 
+      ? knowledgeState.filteredItems.length 
+      : knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
+    
+    // 显示确认对话框，明确说明实际会确认的数量
     let confirmed;
     try {
+      let confirmMessage = `确定要批量确认所有 ${totalPendingCount} 个待确认的知识点吗？`;
+      if (totalPendingCount !== filteredPendingCount) {
+        confirmMessage += `\n\n（当前筛选下显示 ${filteredPendingCount} 个）`;
+      }
       confirmed = await showConfirm(
-        `确定要批量确认 ${ids.length} 个待确认的知识点吗？`,
+        confirmMessage,
         { title: '批量确认', type: 'warning' }
       );
     } catch (error) {
@@ -206,7 +218,7 @@ async function handleBatchConfirm() {
         batchConfirmBtn.disabled = false;
         batchConfirmBtn.innerHTML = `
           <i data-lucide="check-circle-2" size="16"></i>
-          <span>批量确认全部 (${ids.length})</span>
+          <span>批量确认所有待确认</span>
         `;
         if (window.lucide) {
           window.lucide.createIcons(batchConfirmBtn);
@@ -243,17 +255,16 @@ async function handleBatchConfirm() {
           limit: 10000,
           page: 1
         });
-        const pendingCount = response.success && response.data ? response.data.length : knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
+        // 恢复按钮文案为"批量确认所有待确认"（不再显示数量）
         batchConfirmBtn.innerHTML = `
           <i data-lucide="check-circle-2" size="16"></i>
-          <span>批量确认全部 (${pendingCount})</span>
+          <span>批量确认所有待确认</span>
         `;
       } catch (e) {
-        // 如果获取失败，使用当前显示的数量作为后备
-        const pendingCount = knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
+        // 如果获取失败，使用当前显示的数量作为后备（但文案已改为"所有待确认"）
         batchConfirmBtn.innerHTML = `
           <i data-lucide="check-circle-2" size="16"></i>
-          <span>批量确认全部 (${pendingCount})</span>
+          <span>批量确认所有待确认</span>
         `;
       }
       if (window.lucide) {
@@ -604,6 +615,10 @@ export function renderKnowledgeView() {
   };
   
   // 更新计数
+  // 注意：filteredItems 包含了所有当前筛选条件下的知识点
+  // 在网格视图下，latestItems 和 otherItems 是从 filteredItems 中分离出来的
+  // 所以 filteredItems.length === latestItems.length + otherItems.length
+  // 这个计数表示当前筛选条件下总的知识点数量
   const countElement = document.getElementById('knowledge-items-count');
   if (countElement) {
     countElement.textContent = `${knowledgeState.filteredItems.length} 条目`;
@@ -614,7 +629,8 @@ export function renderKnowledgeView() {
 
   // K1: 如果当前筛选是"待确认"，显示提示信息
   if (knowledgeState.currentFilter === 'pending') {
-    const pendingCount = knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
+    // 在"待确认"筛选下，filteredItems 已经全部是 pending 状态，直接使用长度即可
+    const filteredPendingCount = knowledgeState.filteredItems.length; // 当前筛选下显示的待确认数量
     const pendingNotice = document.createElement('div');
     pendingNotice.className = 'mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4';
     pendingNotice.innerHTML = `
@@ -623,17 +639,17 @@ export function renderKnowledgeView() {
         <div class="flex-1">
           <p class="text-sm text-amber-800 font-medium">当前仅显示待人工确认的知识卡片</p>
           <p class="text-xs text-amber-600 mt-1">这些卡片需要您检查并确认后才能用于智能问答</p>
-          ${pendingCount > 0 ? `<p class="text-xs text-amber-700 mt-1 font-medium">共有 ${pendingCount} 条待确认的知识点</p>` : ''}
+          ${filteredPendingCount > 0 ? `<p class="text-xs text-amber-700 mt-1 font-medium">当前筛选下显示 ${filteredPendingCount} 条待确认的知识点</p>` : ''}
         </div>
       </div>
-      ${pendingCount > 0 ? `
+      ${filteredPendingCount > 0 ? `
         <div class="flex justify-end">
           <button
             id="btn-batch-confirm-all"
             class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors shadow-sm hover:shadow-md flex items-center gap-2"
           >
             <i data-lucide="check-circle-2" size="16"></i>
-            <span>批量确认全部 (${pendingCount})</span>
+            <span>批量确认所有待确认</span>
           </button>
         </div>
       ` : ''}
@@ -916,7 +932,7 @@ export function renderKnowledgeView() {
         divider.className = 'my-6 flex items-center gap-4';
         divider.innerHTML = `
           <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
-          <span class="text-xs text-slate-400 font-medium">全部知识</span>
+          <span class="text-xs text-slate-400 font-medium">全部知识 (${otherItems.length} 条)</span>
           <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
         `;
         fragment.appendChild(divider);
@@ -1353,12 +1369,29 @@ function renderCategoryFilters() {
   const container = document.getElementById('knowledge-category-filters');
   if (!container) return;
 
+  // 统计各分类数量：基于当前状态筛选和搜索筛选的结果（排除分类筛选本身）
+  // 这样可以显示"在当前筛选条件下，选择该分类会有多少个结果"
+  let baseFiltered = [...knowledgeState.items];
+  
+  // 应用状态筛选（如果有）
+  if (knowledgeState.currentFilter !== 'all') {
+    baseFiltered = baseFiltered.filter(item => item.status === knowledgeState.currentFilter);
+  }
+  
+  // 应用搜索筛选（如果有）
+  if (knowledgeState.searchQuery) {
+    const query = knowledgeState.searchQuery.toLowerCase();
+    baseFiltered = baseFiltered.filter(item => 
+      item.title.toLowerCase().includes(query) ||
+      item.content.toLowerCase().includes(query)
+    );
+  }
+  
   // 统计各分类数量
-  const categoryCounts = { all: knowledgeState.items.length };
-  knowledgeState.items.forEach(item => {
+  const categoryCounts = { all: baseFiltered.length };
+  baseFiltered.forEach(item => {
     const category = item.category || getCategoryFromTags(item.tags || []);
     categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-    categoryCounts.all = knowledgeState.items.length;
   });
 
   const filtersHTML = Object.keys(CATEGORY_CONFIG).map(category => {
