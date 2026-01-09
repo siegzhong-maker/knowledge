@@ -910,8 +910,14 @@ function handleCategorySelect(category) {
         checkIcon.setAttribute('size', '16');
         checkIcon.className = 'text-indigo-600';
         buttonContainer.appendChild(checkIcon);
-        if (window.lucide) {
-          window.lucide.createIcons(selectedBtn);
+      }
+      
+      // 重新初始化图标（确保新添加的勾选图标能正确显示）
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        try {
+          window.lucide.createIcons(categoryMenu);
+        } catch (e) {
+          console.warn('初始化 Lucide 图标失败:', e);
         }
       }
     }
@@ -995,8 +1001,14 @@ function handleSubcategorySelect(subcategoryId) {
         checkIcon.setAttribute('size', '16');
         checkIcon.className = 'text-indigo-600';
         buttonContainer.appendChild(checkIcon);
-        if (window.lucide) {
-          window.lucide.createIcons(selectedBtn);
+      }
+      
+      // 重新初始化图标（确保新添加的勾选图标能正确显示）
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        try {
+          window.lucide.createIcons(subcategoryMenu);
+        } catch (e) {
+          console.warn('初始化 Lucide 图标失败:', e);
         }
       }
     }

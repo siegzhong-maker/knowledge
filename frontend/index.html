@@ -2381,11 +2381,12 @@
           }
         }
         
-        // 重新初始化图标
+        // 重新初始化图标（确保新添加的勾选图标能正确显示）
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
           try {
-            window.lucide.createIcons(stageBtn);
+            // 重新初始化整个菜单，确保所有图标（包括新添加的勾选图标）都正确显示
             window.lucide.createIcons(stageMenu);
+            window.lucide.createIcons(stageBtn);
           } catch (e) {
             console.warn('初始化 Lucide 图标失败:', e);
           }
