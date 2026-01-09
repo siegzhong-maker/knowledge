@@ -156,23 +156,74 @@ async function handleBatchConfirm() {
       currentKnowledgeBaseId = null;
     }
 
-    // 调用 API 获取所有待确认的知识点（不仅仅是当前页）
-    console.log('[批量确认] 正在获取待确认的知识点列表...');
-    let response;
-    try {
-      response = await knowledgeAPI.getItems({
-        status: 'pending',
-        knowledgeBaseId: currentKnowledgeBaseId,
-        limit: 10000, // 设置一个足够大的 limit 来获取所有待确认项
-        page: 1
-      });
-      console.log('[批量确认] API 响应:', response);
-    } catch (apiError) {
-      console.error('[批量确认] 获取知识点列表时 API 调用失败:', apiError);
-      throw new Error('无法获取待确认的知识点列表: ' + (apiError.message || '网络错误'));
-    }
+    // 优先使用当前筛选下显示的待确认项（与页面显示保持一致）
+    // 获取当前筛选下显示的待确认数量
+    const filteredPendingItems = knowledgeState.currentFilter === 'pending' 
+      ? knowledgeState.filteredItems 
+      : knowledgeState.filteredItems.filter(item => item.status === 'pending');
+    
+    const filteredPendingCount = filteredPendingItems.length;
+    console.log('[批量确认] 当前筛选下显示的待确认项数量:', filteredPendingCount);
+    
+    let ids = [];
+    let totalPendingCount = 0;
+    
+    // 如果当前筛选下有待确认项，优先使用这些项的 ID
+    if (filteredPendingCount > 0) {
+      console.log('[批量确认] 使用当前筛选下显示的待确认项');
+      ids = filteredPendingItems.map(item => item.id);
+      totalPendingCount = ids.length;
+      
+      // 同时调用 API 获取整个知识库中所有待确认项的数量（用于提示用户）
+      try {
+        const response = await knowledgeAPI.getItems({
+          status: 'pending',
+          knowledgeBaseId: currentKnowledgeBaseId,
+          limit: 10000,
+          page: 1
+        });
+        if (response && response.success && response.data) {
+          const allPendingCount = response.data.length;
+          console.log('[批量确认] 整个知识库中所有待确认项数量:', allPendingCount);
+          // 如果整个知识库的待确认项数量与当前筛选下的不同，会在确认对话框中提示
+          totalPendingCount = allPendingCount;
+        }
+      } catch (apiError) {
+        console.warn('[批量确认] 获取全部待确认项数量时出错，使用当前筛选下的数量:', apiError);
+        // 如果 API 调用失败，使用当前筛选下的数量
+        totalPendingCount = filteredPendingCount;
+      }
+    } else {
+      // 如果当前筛选下没有待确认项，尝试从 API 获取
+      console.log('[批量确认] 当前筛选下没有待确认项，尝试从 API 获取...');
+      let response;
+      try {
+        response = await knowledgeAPI.getItems({
+          status: 'pending',
+          knowledgeBaseId: currentKnowledgeBaseId,
+          limit: 10000,
+          page: 1
+        });
+        console.log('[批量确认] API 响应:', response);
+      } catch (apiError) {
+        console.error('[批量确认] 获取知识点列表时 API 调用失败:', apiError);
+        throw new Error('无法获取待确认的知识点列表: ' + (apiError.message || '网络错误'));
+      }
 
-    if (!response || !response.success || !response.data || response.data.length === 0) {
+      if (!response || !response.success || !response.data || response.data.length === 0) {
+        console.log('[批量确认] 没有待确认的知识点');
+        if (window.showToast) {
+          window.showToast('没有待确认的知识点', 'info');
+        }
+        return;
+      }
+      
+      console.log('[批量确认] 从 API 找到', response.data.length, '个待确认的知识点');
+      ids = response.data.map(item => item.id);
+      totalPendingCount = ids.length;
+    }
+    
+    if (ids.length === 0) {
       console.log('[批量确认] 没有待确认的知识点');
       if (window.showToast) {
         window.showToast('没有待确认的知识点', 'info');
@@ -180,17 +231,7 @@ async function handleBatchConfirm() {
       return;
     }
     
-    console.log('[批量确认] 找到', response.data.length, '个待确认的知识点');
-
-    const ids = response.data.map(item => item.id);
-    const totalPendingCount = ids.length;
-    
-    // 获取当前筛选下显示的待确认数量（用于提示）
-    // 注意：在"待确认"筛选下，filteredItems 已经全部是 pending 状态
-    // 但这里需要考虑可能有分类筛选或搜索筛选，所以使用当前筛选结果的长度
-    const filteredPendingCount = knowledgeState.currentFilter === 'pending' 
-      ? knowledgeState.filteredItems.length 
-      : knowledgeState.filteredItems.filter(item => item.status === 'pending').length;
+    console.log('[批量确认] 准备确认', ids.length, '个待确认的知识点');
     
     // 显示确认对话框，明确说明实际会确认的数量
     let confirmed = false;
@@ -203,11 +244,18 @@ async function handleBatchConfirm() {
         throw new Error('确认对话框功能不可用，请刷新页面重试');
       }
       
-      let confirmMessage = `将确认整个知识库中所有待确认的知识点，共 ${totalPendingCount} 个。`;
-      if (totalPendingCount !== filteredPendingCount) {
-        confirmMessage += `\n\n当前筛选下显示 ${filteredPendingCount} 个。`;
+      // 构建确认消息
+      let confirmMessage = '';
+      if (filteredPendingCount > 0 && totalPendingCount !== filteredPendingCount) {
+        // 如果当前筛选下的数量与整个知识库的数量不同，说明有筛选条件
+        confirmMessage = `将确认当前筛选下显示的待确认知识点，共 ${ids.length} 个。`;
+        confirmMessage += `\n\n整个知识库中共有 ${totalPendingCount} 个待确认的知识点。`;
+        confirmMessage += `\n\n确认后，这些知识点将可以在智能问答中使用。`;
+      } else {
+        // 如果没有筛选条件，或者数量相同，说明是确认所有待确认项
+        confirmMessage = `将确认所有待确认的知识点，共 ${ids.length} 个。`;
+        confirmMessage += `\n\n确认后，这些知识点将可以在智能问答中使用。`;
       }
-      confirmMessage += `\n\n确认后，这些知识点将可以在智能问答中使用。`;
       
       confirmed = await showConfirm(
         confirmMessage,
