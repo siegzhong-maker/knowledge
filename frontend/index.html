@@ -2146,30 +2146,51 @@
             }
           }
           
-          // 更新菜单中的选中状态
+          // 更新菜单中的选中状态（单选：确保只有一个选项被选中）
           if (stageMenu) {
+            // 先清除所有选项的选中状态
             stageMenu.querySelectorAll('button[data-value]').forEach(btn => {
-              const isSelected = btn.dataset.value === (presetOptions.includes(current.stage) ? current.stage : '__custom__');
-              if (isSelected) {
-                btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
-                btn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
-                if (!btn.querySelector('i[data-lucide="check"]')) {
-                  const container = btn.querySelector('span.flex.items-center.justify-between') || btn;
-                  container.innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
-                }
+              // 清除所有可能的选中样式
+              btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium', 'text-slate-700', 'text-slate-500', 'italic');
+              
+              // 移除所有勾选图标
+              const checkIcon = btn.querySelector('i[data-lucide="check"]');
+              if (checkIcon) {
+                checkIcon.remove();
+              }
+              
+              // 恢复默认样式
+              if (btn.dataset.value === '') {
+                btn.classList.add('text-slate-500', 'italic');
               } else {
-                btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
-                if (btn.dataset.value === '') {
-                  btn.classList.add('text-slate-500', 'italic');
-                } else {
-                  btn.classList.add('text-slate-700');
-                }
-                const checkIcon = btn.querySelector('i[data-lucide="check"]');
-                if (checkIcon) {
-                  checkIcon.remove();
-                }
+                btn.classList.add('text-slate-700');
               }
             });
+            
+            // 然后只选中当前选项
+            const selectedValue = presetOptions.includes(current.stage) ? current.stage : '__custom__';
+            const selectedBtn = stageMenu.querySelector(`button[data-value="${selectedValue}"]`);
+            if (selectedBtn) {
+              selectedBtn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
+              selectedBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+              
+              // 添加勾选图标（使用更安全的方式）
+              const buttonContainer = selectedBtn.querySelector('span.flex.items-center.justify-between');
+              if (buttonContainer && !buttonContainer.querySelector('i[data-lucide="check"]')) {
+                const checkIcon = document.createElement('i');
+                checkIcon.setAttribute('data-lucide', 'check');
+                checkIcon.setAttribute('size', '16');
+                checkIcon.className = 'text-indigo-600';
+                buttonContainer.appendChild(checkIcon);
+                if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                  try {
+                    window.lucide.createIcons(selectedBtn);
+                  } catch (e) {
+                    console.warn('初始化 Lucide 图标失败:', e);
+                  }
+                }
+              }
+            }
           }
         } else {
           stageSelect.value = '';
@@ -2181,18 +2202,23 @@
             stageSelectText.innerHTML = `<i data-lucide="circle" size="14"></i><span>请选择</span>`;
           }
           
-          // 重置菜单选中状态
+          // 重置菜单选中状态（单选：确保所有选项都未选中）
           if (stageMenu) {
             stageMenu.querySelectorAll('button[data-value]').forEach(btn => {
-              btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
+              // 清除所有可能的选中样式
+              btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium', 'text-slate-700', 'text-slate-500', 'italic');
+              
+              // 移除所有勾选图标
+              const checkIcon = btn.querySelector('i[data-lucide="check"]');
+              if (checkIcon) {
+                checkIcon.remove();
+              }
+              
+              // 恢复默认样式
               if (btn.dataset.value === '') {
                 btn.classList.add('text-slate-500', 'italic');
               } else {
                 btn.classList.add('text-slate-700');
-              }
-              const checkIcon = btn.querySelector('i[data-lucide="check"]');
-              if (checkIcon) {
-                checkIcon.remove();
               }
             });
           }
@@ -2318,29 +2344,42 @@
           stageCustomInput.value = '';
         }
         
-        // 更新菜单中的选中状态
+        // 更新菜单中的选中状态（单选：确保只有一个选项被选中）
+        // 先清除所有选项的选中状态
         stageMenu.querySelectorAll('button[data-value]').forEach(btn => {
-          const isSelected = btn.dataset.value === value;
-          if (isSelected) {
-            btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
-            btn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
-            if (!btn.querySelector('i[data-lucide="check"]')) {
-              const container = btn.querySelector('span.flex.items-center.justify-between') || btn;
-              container.innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
-            }
+          // 清除所有可能的选中样式
+          btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium', 'text-slate-700', 'text-slate-500', 'italic');
+          
+          // 移除所有勾选图标
+          const checkIcon = btn.querySelector('i[data-lucide="check"]');
+          if (checkIcon) {
+            checkIcon.remove();
+          }
+          
+          // 恢复默认样式
+          if (btn.dataset.value === '') {
+            btn.classList.add('text-slate-500', 'italic');
           } else {
-            btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
-            if (btn.dataset.value === '') {
-              btn.classList.add('text-slate-500', 'italic');
-            } else {
-              btn.classList.add('text-slate-700');
-            }
-            const checkIcon = btn.querySelector('i[data-lucide="check"]');
-            if (checkIcon) {
-              checkIcon.remove();
-            }
+            btn.classList.add('text-slate-700');
           }
         });
+        
+        // 然后只选中当前选项
+        const selectedBtn = stageMenu.querySelector(`button[data-value="${value}"]`);
+        if (selectedBtn) {
+          selectedBtn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
+          selectedBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+          
+          // 添加勾选图标（使用更安全的方式）
+          const buttonContainer = selectedBtn.querySelector('span.flex.items-center.justify-between');
+          if (buttonContainer && !buttonContainer.querySelector('i[data-lucide="check"]')) {
+            const checkIcon = document.createElement('i');
+            checkIcon.setAttribute('data-lucide', 'check');
+            checkIcon.setAttribute('size', '16');
+            checkIcon.className = 'text-indigo-600';
+            buttonContainer.appendChild(checkIcon);
+          }
+        }
         
         // 重新初始化图标
         if (window.lucide && typeof window.lucide.createIcons === 'function') {

@@ -625,11 +625,13 @@ async function loadSubcategoriesForCategory(category) {
         });
       }
       
-      // 更新自定义选择框的菜单选项
+      // 更新自定义选择框的菜单选项（单选：确保只有一个选项被选中）
       const menuOptions = document.getElementById('knowledge-subcategory-select-options');
       if (menuOptions) {
+        // 确保只有一个子分类被选中
+        const selectedSubcategoryId = currentItem.subcategory_id || null;
         menuOptions.innerHTML = response.data.map(subcat => {
-          const isSelected = currentItem.subcategory_id === subcat.id;
+          const isSelected = selectedSubcategoryId === subcat.id;
           return `
             <button
               type="button"
@@ -878,29 +880,41 @@ function handleCategorySelect(category) {
     }
   }
   
-  // 更新菜单中的选中状态
+  // 更新菜单中的选中状态（单选：确保只有一个选项被选中）
   const categoryMenu = document.getElementById('knowledge-category-select-menu');
   if (categoryMenu) {
+    // 先清除所有选项的选中状态
     categoryMenu.querySelectorAll('button[data-value]').forEach(btn => {
-      const isSelected = btn.dataset.value === category;
-      if (isSelected) {
-        btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
-        btn.classList.remove('text-slate-700');
-        if (!btn.querySelector('i[data-lucide="check"]')) {
-          btn.querySelector('span.flex.items-center.justify-between').innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
-          if (window.lucide) {
-            window.lucide.createIcons(btn);
-          }
-        }
-      } else {
-        btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
-        btn.classList.add('text-slate-700');
-        const checkIcon = btn.querySelector('i[data-lucide="check"]');
-        if (checkIcon) {
-          checkIcon.remove();
-        }
+      // 清除所有可能的选中样式
+      btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium', 'text-slate-700');
+      btn.classList.add('text-slate-700');
+      
+      // 移除所有勾选图标
+      const checkIcon = btn.querySelector('i[data-lucide="check"]');
+      if (checkIcon) {
+        checkIcon.remove();
       }
     });
+    
+    // 然后只选中当前选项
+    const selectedBtn = categoryMenu.querySelector(`button[data-value="${category}"]`);
+    if (selectedBtn) {
+      selectedBtn.classList.remove('text-slate-700');
+      selectedBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+      
+      // 添加勾选图标（使用更安全的方式）
+      const buttonContainer = selectedBtn.querySelector('span.flex.items-center.justify-between');
+      if (buttonContainer && !buttonContainer.querySelector('i[data-lucide="check"]')) {
+        const checkIcon = document.createElement('i');
+        checkIcon.setAttribute('data-lucide', 'check');
+        checkIcon.setAttribute('size', '16');
+        checkIcon.className = 'text-indigo-600';
+        buttonContainer.appendChild(checkIcon);
+        if (window.lucide) {
+          window.lucide.createIcons(selectedBtn);
+        }
+      }
+    }
   }
   
   // 关闭菜单
@@ -945,34 +959,47 @@ function handleSubcategorySelect(subcategoryId) {
     }
   }
   
-  // 更新菜单中的选中状态
+  // 更新菜单中的选中状态（单选：确保只有一个选项被选中）
   const subcategoryMenu = document.getElementById('knowledge-subcategory-select-menu');
   if (subcategoryMenu) {
+    // 先清除所有选项的选中状态
     subcategoryMenu.querySelectorAll('button[data-value]').forEach(btn => {
-      const isSelected = btn.dataset.value === (subcategoryId || '');
-      if (isSelected) {
-        btn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
-        btn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
-        if (!btn.querySelector('i[data-lucide="check"]')) {
-          const container = btn.querySelector('span.flex.items-center.justify-between') || btn;
-          container.innerHTML += '<i data-lucide="check" size="16" class="text-indigo-600"></i>';
-          if (window.lucide) {
-            window.lucide.createIcons(btn);
-          }
-        }
+      // 清除所有可能的选中样式
+      btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium', 'text-slate-700', 'text-slate-500', 'italic');
+      
+      // 移除所有勾选图标
+      const checkIcon = btn.querySelector('i[data-lucide="check"]');
+      if (checkIcon) {
+        checkIcon.remove();
+      }
+      
+      // 恢复默认样式
+      if (btn.dataset.value === '') {
+        btn.classList.add('text-slate-500', 'italic');
       } else {
-        btn.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
-        if (btn.dataset.value === '') {
-          btn.classList.add('text-slate-500', 'italic');
-        } else {
-          btn.classList.add('text-slate-700');
-        }
-        const checkIcon = btn.querySelector('i[data-lucide="check"]');
-        if (checkIcon) {
-          checkIcon.remove();
-        }
+        btn.classList.add('text-slate-700');
       }
     });
+    
+    // 然后只选中当前选项
+    const selectedBtn = subcategoryMenu.querySelector(`button[data-value="${subcategoryId || ''}"]`);
+    if (selectedBtn) {
+      selectedBtn.classList.remove('text-slate-700', 'text-slate-500', 'italic');
+      selectedBtn.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+      
+      // 添加勾选图标（使用更安全的方式）
+      const buttonContainer = selectedBtn.querySelector('span.flex.items-center.justify-between');
+      if (buttonContainer && !buttonContainer.querySelector('i[data-lucide="check"]')) {
+        const checkIcon = document.createElement('i');
+        checkIcon.setAttribute('data-lucide', 'check');
+        checkIcon.setAttribute('size', '16');
+        checkIcon.className = 'text-indigo-600';
+        buttonContainer.appendChild(checkIcon);
+        if (window.lucide) {
+          window.lucide.createIcons(selectedBtn);
+        }
+      }
+    }
   }
   
   // 关闭菜单
