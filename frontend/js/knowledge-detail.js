@@ -634,6 +634,56 @@ async function saveKnowledgeItem(itemId = null) {
     loadingToast.close();
     renderDetailDrawer();
     showToast('保存成功', 'success');
+    
+    // 刷新列表 - 更新当前项的分类等信息并刷新视图
+    setTimeout(async () => {
+      try {
+        // 清除 API 缓存，确保获取最新数据
+        const { clearAPICache } = await import('./api.js');
+        clearAPICache();
+        
+        const { loadKnowledgeItems, getKnowledgeState, renderKnowledgeView } = await import('./knowledge-items.js');
+        const state = getKnowledgeState();
+        
+        // 更新列表中对应项的数据（立即更新UI）
+        const itemIndex = state.items.findIndex(item => item.id === currentItem.id);
+        if (itemIndex !== -1) {
+          // 合并更新后的数据
+          state.items[itemIndex] = { 
+            ...state.items[itemIndex], 
+            ...response.data,
+            category: response.data.category || state.items[itemIndex].category,
+            subcategory_id: response.data.subcategory_id !== undefined ? response.data.subcategory_id : state.items[itemIndex].subcategory_id,
+            subcategory: response.data.subcategory || state.items[itemIndex].subcategory,
+            title: response.data.title || state.items[itemIndex].title
+          };
+        }
+        const filteredIndex = state.filteredItems.findIndex(item => item.id === currentItem.id);
+        if (filteredIndex !== -1) {
+          // 合并更新后的数据
+          state.filteredItems[filteredIndex] = { 
+            ...state.filteredItems[filteredIndex], 
+            ...response.data,
+            category: response.data.category || state.filteredItems[filteredIndex].category,
+            subcategory_id: response.data.subcategory_id !== undefined ? response.data.subcategory_id : state.filteredItems[filteredIndex].subcategory_id,
+            subcategory: response.data.subcategory || state.filteredItems[filteredIndex].subcategory,
+            title: response.data.title || state.filteredItems[filteredIndex].title
+          };
+        }
+        
+        // 立即更新视图
+        renderKnowledgeView();
+        
+        // 重新加载数据，这会自动应用筛选和渲染，更新分类筛选器数量
+        await loadKnowledgeItems();
+      } catch (error) {
+        console.error('刷新列表失败:', error);
+        // 降级方案
+        if (window.refreshKnowledgeList) {
+          window.refreshKnowledgeList();
+        }
+      }
+    }, 100);
   } catch (error) {
     loadingToast.close();
     console.error('保存失败:', error);
