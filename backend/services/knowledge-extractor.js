@@ -1408,24 +1408,47 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
       });
       
       if (knowledgeItems.length === 0) {
-        console.warn('[提取] ⚠️ 未提取到任何知识点', {
+        // 增强空知识点检测和诊断
+        const diagnosticInfo = {
           extractionId,
           itemId,
           contentLength: content.length,
           contentPreview: content.substring(0, 500),
-          possibleReasons: [
-            '文档内容可能太短或质量不高',
-            'AI 返回的格式不正确',
-            'API Key 可能无效或配额已用完',
-            '文档内容可能不包含可提取的知识点'
-          ]
-        });
+          contentEnd: content.length > 500 ? content.substring(content.length - 500) : null,
+          hasNonWhitespace: content.trim().length > 0,
+          wordCount: content.split(/\s+/).filter(w => w.length > 0).length,
+          lineCount: content.split('\n').length,
+          possibleReasons: [],
+          recommendations: []
+        };
+        
+        // 分析可能的原因
+        if (content.length < 100) {
+          diagnosticInfo.possibleReasons.push('文档内容过短（少于100字符）');
+          diagnosticInfo.recommendations.push('检查文档是否包含实际内容');
+        } else if (content.trim().length === 0) {
+          diagnosticInfo.possibleReasons.push('文档内容只包含空白字符');
+          diagnosticInfo.recommendations.push('检查文档内容是否正确解析');
+        } else if (content.split(/\s+/).filter(w => w.length > 0).length < 20) {
+          diagnosticInfo.possibleReasons.push('文档内容词汇量太少（少于20个词）');
+          diagnosticInfo.recommendations.push('文档可能只包含格式信息或标题');
+        } else {
+          diagnosticInfo.possibleReasons.push('AI未返回知识点数据');
+          diagnosticInfo.possibleReasons.push('AI返回的格式可能不正确');
+          diagnosticInfo.possibleReasons.push('文档内容可能不包含可提取的知识点');
+          diagnosticInfo.recommendations.push('查看Railway日志中的AI完整响应');
+          diagnosticInfo.recommendations.push('检查API Key是否有效');
+          diagnosticInfo.recommendations.push('尝试提取其他文档');
+        }
+        
+        console.warn('[提取] ⚠️ 未提取到任何知识点', diagnosticInfo);
         
         // 检查内容是否太短
         if (content.length < 100) {
           console.warn('[提取] ⚠️ 文档内容过短，可能无法提取知识点', {
             itemId,
-            contentLength: content.length
+            contentLength: content.length,
+            contentPreview: content.substring(0, 200)
           });
         }
       }
@@ -1754,12 +1777,32 @@ async function extractFromDocuments(itemIds, knowledgeBaseId, options = {}) {
   }
   
   if (results.knowledgeItemIds.length === 0) {
-    console.warn('[提取] ⚠️ 最终结果：没有保存任何知识点ID', {
+    // 增强最终结果的诊断信息
+    const finalDiagnostic = {
       extractionId,
       totalItems: results.totalItems,
       processedItems: results.processedItems,
-      extractedCount: results.extractedCount
-    });
+      extractedCount: results.extractedCount,
+      knowledgeItemsLength: results.knowledgeItems.length,
+      possibleCauses: [],
+      recommendations: []
+    };
+    
+    if (results.extractedCount === 0) {
+      finalDiagnostic.possibleCauses.push('所有文档都未提取到知识点');
+      finalDiagnostic.possibleCauses.push('可能原因：文档内容不适合提取、AI返回格式错误、API Key问题等');
+      finalDiagnostic.recommendations.push('查看Railway日志中每个文档的提取详情');
+      finalDiagnostic.recommendations.push('检查文档内容是否包含实际知识点');
+      finalDiagnostic.recommendations.push('确认API Key已正确配置');
+    } else if (results.extractedCount > 0 && results.knowledgeItemIds.length === 0) {
+      finalDiagnostic.possibleCauses.push('提取到知识点但保存失败');
+      finalDiagnostic.possibleCauses.push('可能原因：数据库插入失败、数据验证失败、ID收集逻辑问题');
+      finalDiagnostic.recommendations.push('查看Railway日志中的[保存]相关错误');
+      finalDiagnostic.recommendations.push('检查数据库表结构是否正确');
+      finalDiagnostic.recommendations.push('检查知识点数据验证逻辑');
+    }
+    
+    console.warn('[提取] ⚠️ 最终结果：没有保存任何知识点ID', finalDiagnostic);
   }
 
   return results;

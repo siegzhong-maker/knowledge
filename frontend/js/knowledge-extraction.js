@@ -6,6 +6,10 @@ import { updateExtractionProgress, removeExtractionTask } from './extraction-pro
 // 提取任务状态管理
 const extractionTasks = new Map();
 
+// 轮询超时管理（防止无限轮询）
+const extractionStartTimes = new Map();
+const MAX_EXTRACTION_TIME = 30 * 60 * 1000; // 30分钟超时
+
 /**
  * 从文档提取知识
  * @param {string} docId - 文档ID
@@ -69,6 +73,9 @@ export async function extractFromDocument(docId, knowledgeBaseId = null, onProgr
       status: 'processing',
       onProgress
     });
+    
+    // 记录开始时间（用于超时检测）
+    extractionStartTimes.set(extractionId, Date.now());
     
     // 同时更新进度条中的任务信息（用于重试功能）
     const { updateExtractionProgress } = await import('./extraction-progress-bar.js');
@@ -139,6 +146,9 @@ export async function extractFromDocuments(docIds, knowledgeBaseId = null, onPro
       onProgress
     });
     
+    // 记录开始时间（用于超时检测）
+    extractionStartTimes.set(extractionId, Date.now());
+    
     // 同时更新进度条中的任务信息（用于重试功能）
     const { updateExtractionProgress } = await import('./extraction-progress-bar.js');
     updateExtractionProgress(extractionId, {
@@ -185,6 +195,36 @@ const MAX_POLL_FAILURES = 5; // 最多允许5次连续失败
 async function pollExtractionStatus(extractionId, retryCount = 0) {
   const task = extractionTasks.get(extractionId);
   if (!task) {
+    return;
+  }
+
+  // 检查是否超时
+  const startTime = extractionStartTimes.get(extractionId);
+  if (startTime && Date.now() - startTime > MAX_EXTRACTION_TIME) {
+    console.error('[提取] ⚠️ 提取任务超时', {
+      extractionId,
+      elapsedTime: Date.now() - startTime,
+      maxTime: MAX_EXTRACTION_TIME
+    });
+    
+    updateExtractionProgress(extractionId, {
+      docName: task.docName || '文档',
+      status: 'failed',
+      stage: 'failed',
+      progress: task.progress || 0,
+      totalItems: task.totalItems || 0,
+      processedItems: task.processedItems || 0,
+      extractedCount: task.extractedCount || 0,
+      error: '提取任务超时（超过30分钟），请检查服务器状态或重试'
+    });
+    
+    showToast('提取任务超时，请检查服务器状态或重试', 'error');
+    
+    // 清理任务
+    extractionTasks.delete(extractionId);
+    extractionStartTimes.delete(extractionId);
+    pollFailureCount.delete(extractionId);
+    removeExtractionTask(extractionId);
     return;
   }
 
@@ -429,6 +469,9 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
         console.warn('刷新文档列表失败:', e);
       }
       
+      // 清理开始时间记录
+      extractionStartTimes.delete(extractionId);
+      
       // 延迟清理任务，让用户看到完成状态
       setTimeout(() => {
         extractionTasks.delete(extractionId);
@@ -456,6 +499,9 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
         showToast('提取失败，请重试', 'error');
       }
       
+      // 清理开始时间记录
+      extractionStartTimes.delete(extractionId);
+      
       // 延迟清理任务
       setTimeout(() => {
         extractionTasks.delete(extractionId);
@@ -463,6 +509,10 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
       }, 5000);
     }
   } catch (error) {
+    // 在catch块开始处先获取task，避免作用域问题
+    // 如果try块在定义task之前就出错，这里也能安全获取
+    const task = extractionTasks.get(extractionId);
+    
     console.error('[提取] 轮询提取状态失败', {
       extractionId,
       error: error.message,
@@ -488,7 +538,6 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
       });
       
       // 更新进度显示，但不标记为失败
-      const task = extractionTasks.get(extractionId);
       if (task) {
         updateExtractionProgress(extractionId, {
           docName: task.docName || '文档',
@@ -509,7 +558,6 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
     }
     
     // 超过最大失败次数或其他错误，标记为失败
-    const task = extractionTasks.get(extractionId);
     const errorMessage = isNetworkError 
       ? `无法连接到服务器（已重试${newFailureCount}次），请检查网络连接或Railway服务状态`
       : (error.message || '获取提取状态失败');
@@ -529,6 +577,7 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
     
     // 清理失败计数和任务
     pollFailureCount.delete(extractionId);
+    extractionStartTimes.delete(extractionId);
     setTimeout(() => {
       extractionTasks.delete(extractionId);
       removeExtractionTask(extractionId);

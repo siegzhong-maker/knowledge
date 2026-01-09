@@ -209,12 +209,18 @@ router.post('/extract', async (req, res) => {
         finalKnowledgeItems: finalKnowledgeItems.length
       });
       
+      // 确保状态被正确设置为 'completed'，即使没有知识点
       extractionTasks.set(extractionId, {
         ...result,
         knowledgeItemIds: finalKnowledgeItemIds,
         knowledgeItems: finalKnowledgeItems,
-        status: 'completed',
-        stage: 'completed'
+        status: 'completed', // 无论是否有知识点，都标记为完成
+        stage: 'completed',
+        // 确保所有必需字段都存在
+        totalItems: result.totalItems || itemIds.length,
+        processedItems: result.processedItems || itemIds.length,
+        extractedCount: result.extractedCount || 0,
+        progress: 100 // 确保进度为100%
       });
       
       // 验证结果
