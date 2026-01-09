@@ -2,7 +2,7 @@
 import { formatTime } from './utils.js';
 
 /**
- * 按时间分组知识卡片
+ * 按时间分组知识点
  * @param {Array} items - 知识项数组
  * @returns {Object} 分组后的对象
  */

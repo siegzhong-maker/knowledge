@@ -281,9 +281,11 @@ function createTaskCard(task) {
   }
   
   const progressText = status === 'processing' 
-    ? `${docProgressText} · 已提取 ${extractedCount} 条知识${remainingTime ? ` · ${remainingTime}` : ''}`
+    ? `${docProgressText} · 已提取 ${extractedCount} 个知识点${remainingTime ? ` · ${remainingTime}` : ''}`
     : status === 'completed'
-    ? `成功生成 ${extractedCount} 个知识点`
+    ? extractedCount === 0
+      ? '提取完成，但未生成知识点'
+      : `成功生成 ${extractedCount} 个知识点`
     : error || '提取失败';
 
   // 预览已提取的知识点（紧凑版，仅在空间允许时显示）
@@ -301,8 +303,15 @@ function createTaskCard(task) {
   ` : '';
 
   // 优化后的卡片设计
+  // 如果是完成状态但没有生成知识点，使用警告样式
+  const borderColor = status === 'completed' 
+    ? (extractedCount === 0 ? 'border-amber-200' : 'border-green-200')
+    : status === 'failed' 
+    ? 'border-red-200' 
+    : 'border-slate-200';
+    
   return `
-    <div class="bg-white rounded-lg border ${status === 'completed' ? 'border-green-200' : status === 'failed' ? 'border-red-200' : 'border-slate-200'} shadow-lg p-3 hover:shadow-xl transition-all">
+    <div class="bg-white rounded-lg border ${borderColor} shadow-lg p-3 hover:shadow-xl transition-all">
       <div class="flex items-start justify-between gap-2">
         <div class="flex-1 min-w-0">
           <!-- 标题栏 -->
@@ -358,7 +367,7 @@ function createTaskCard(task) {
             <button
               onclick="window.retryExtraction && window.retryExtraction('${extractionId}')"
               class="px-2 py-1 text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
-              title="重试提取"
+              title="重新尝试提取（不会覆盖已有的知识点）"
             >
               <span>重试</span>
             </button>

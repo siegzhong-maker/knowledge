@@ -619,7 +619,7 @@ function renderRepoList() {
             <p class="text-sm text-slate-500 mb-6">
               ${isFiltered 
                 ? '尝试调整搜索条件或筛选器' 
-                : '上传PDF文档开始使用，系统会自动提取知识卡片'}
+                : '上传PDF文档开始使用，系统会自动提取知识点'}
             </p>
             ${!isFiltered ? `
               <button
@@ -686,7 +686,7 @@ function renderRepoList() {
             data-action="extract"
             data-id="${item.id}"
             class="px-2.5 py-1.5 ${isExtracted ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'} rounded-md transition-colors font-medium text-xs flex items-center gap-1.5"
-            title="${isExtracted ? '重新提取知识卡片' : '提取知识卡片'}"
+            title="${isExtracted ? '重新提取知识点（将覆盖已提取的知识点）' : '提取知识点'}"
           >
             <i class="fa-solid ${isExtracted ? 'fa-rotate' : 'fa-sparkles'} text-xs"></i>
             <span>${isExtracted ? '重新提取' : '提取'}</span>

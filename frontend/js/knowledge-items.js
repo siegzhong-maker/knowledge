@@ -160,10 +160,11 @@ async function handleBatchConfirm() {
     // 显示确认对话框，明确说明实际会确认的数量
     let confirmed;
     try {
-      let confirmMessage = `确定要批量确认所有 ${totalPendingCount} 个待确认的知识点吗？`;
+      let confirmMessage = `将确认整个知识库中所有待确认的知识点，共 ${totalPendingCount} 个。`;
       if (totalPendingCount !== filteredPendingCount) {
-        confirmMessage += `\n\n（当前筛选下显示 ${filteredPendingCount} 个）`;
+        confirmMessage += `\n\n当前筛选下显示 ${filteredPendingCount} 个。`;
       }
+      confirmMessage += `\n\n确认后，这些知识点将可以在智能问答中使用。`;
       confirmed = await showConfirm(
         confirmMessage,
         { title: '批量确认', type: 'warning' }
@@ -200,7 +201,8 @@ async function handleBatchConfirm() {
     if (confirmResponse.success) {
       // 显示成功提示
       if (window.showToast) {
-        window.showToast(`成功确认 ${confirmResponse.count || ids.length} 个知识点`, 'success');
+        const confirmedCount = confirmResponse.count || ids.length;
+        window.showToast(`成功确认 ${confirmedCount} 个知识点，现在可以在智能问答中使用`, 'success');
       }
       
       // 清除API缓存，确保获取最新数据
@@ -440,11 +442,27 @@ function createStatusBadge(status, item) {
       showManual: !isAutoConfirmed
     };
   } else if (status === 'pending') {
-    // 所有pending状态统一显示为"待确认"，无论置信度高低
-    // 置信度信息通过置信度徽章和顶部装饰条来体现
+    // 所有pending状态统一显示为"待确认"
+    // 但根据置信度区分显示，帮助用户识别哪些可以快速批量确认
+    let pendingLabel = '待确认';
+    if (confidence >= 85) {
+      // 高置信度：可以快速批量确认
+      pendingLabel = `待确认 (${confidence}%)`;
+    } else if (confidence >= 80) {
+      // 中等置信度
+      pendingLabel = `待确认 (${confidence}%)`;
+    } else {
+      // 低置信度：需要仔细审查
+      pendingLabel = `待确认 (${confidence}%，需审查)`;
+    }
+    
     config = {
-      color: 'bg-slate-100 text-slate-500 border-slate-200',
-      label: '待确认',
+      color: confidence >= 85 
+        ? 'bg-amber-50 text-amber-700 border-amber-200' // 高置信度用稍微明显的颜色
+        : confidence >= 80
+        ? 'bg-slate-100 text-slate-500 border-slate-200'
+        : 'bg-orange-50 text-orange-600 border-orange-200', // 低置信度用橙色提醒
+      label: pendingLabel,
       icon: 'circle',
       showManual: false
     };
@@ -470,7 +488,7 @@ function createStatusBadge(status, item) {
 }
 
 /**
- * 创建知识卡片
+ * 创建知识点卡片
  */
 function createKnowledgeCard(item) {
   const card = document.createElement('div');
@@ -639,7 +657,7 @@ export function renderKnowledgeView() {
       <div class="flex items-start gap-3 mb-3">
         <i data-lucide="alert-circle" size="20" class="text-amber-600 flex-shrink-0 mt-0.5"></i>
         <div class="flex-1">
-          <p class="text-sm text-amber-800 font-medium">当前仅显示待人工确认的知识卡片</p>
+          <p class="text-sm text-amber-800 font-medium">当前仅显示待人工确认的知识点</p>
           <p class="text-xs text-amber-600 mt-1">这些卡片需要您检查并确认后才能用于智能问答</p>
           ${filteredPendingCount > 0 ? `<p class="text-xs text-amber-700 mt-1 font-medium">当前筛选下显示 ${filteredPendingCount} 条待确认的知识点</p>` : ''}
         </div>
@@ -703,43 +721,78 @@ export function renderKnowledgeView() {
 
   // 如果没有数据
   if (knowledgeState.filteredItems.length === 0) {
-    const isFiltered = knowledgeState.searchQuery || knowledgeState.currentFilter !== 'all' || knowledgeState.currentCategoryFilter !== 'all';
+    // 区分三种情况：
+    // 1. 知识库为空（从未提取过）
+    // 2. 搜索无结果（有搜索关键词）
+    // 3. 筛选无结果（有筛选条件但没有搜索）
+    const hasSearch = knowledgeState.searchQuery && knowledgeState.searchQuery.trim().length > 0;
+    const hasFilter = knowledgeState.currentFilter !== 'all' || knowledgeState.currentCategoryFilter !== 'all';
     const isEmpty = knowledgeState.items.length === 0;
+    
+    let iconName, title, description, buttonHtml;
+    
+    if (isEmpty) {
+      // 情况1：知识库为空
+      iconName = 'sparkles';
+      title = '知识库还是空的';
+      description = '从文档库提取知识点开始构建你的知识库';
+      buttonHtml = `
+        <button 
+          id="btn-go-to-repository"
+          class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-md flex items-center gap-2"
+        >
+          <i data-lucide="file-text" size="16"></i>
+          <span>去文档库提取知识点</span>
+        </button>
+      `;
+    } else if (hasSearch) {
+      // 情况2：搜索无结果
+      iconName = 'search-x';
+      title = '没有找到匹配的知识点';
+      description = `未找到包含"${knowledgeState.searchQuery}"的知识点。尝试调整搜索关键词或清除搜索查看全部内容。`;
+      buttonHtml = `
+        <button 
+          onclick="document.getElementById('knowledge-search-input').value = ''; document.getElementById('knowledge-search-input').dispatchEvent(new Event('input'));"
+          class="px-4 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+        >
+          <i data-lucide="x" size="14"></i>
+          <span>清除搜索</span>
+        </button>
+      `;
+    } else if (hasFilter) {
+      // 情况3：筛选无结果
+      iconName = 'filter-x';
+      title = '当前筛选下没有知识点';
+      description = '当前筛选条件下没有匹配的知识点。尝试调整筛选条件或清除筛选查看全部内容。';
+      buttonHtml = `
+        <button 
+          onclick="document.querySelectorAll('.knowledge-filter-btn, .category-filter-btn').forEach(btn => { if(btn.dataset.filter === 'all' || btn.dataset.category === 'all') btn.click(); });"
+          class="px-4 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+        >
+          <i data-lucide="x" size="14"></i>
+          <span>清除筛选</span>
+        </button>
+      `;
+    } else {
+      // 默认情况（理论上不应该出现）
+      iconName = 'help-circle';
+      title = '暂无知识点';
+      description = '当前没有可显示的知识点';
+      buttonHtml = '';
+    }
     
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center min-h-[400px] bg-white border border-dashed border-slate-200 rounded-xl p-8">
         <div class="w-24 h-24 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-full flex items-center justify-center mb-6 shadow-sm">
-          <i data-lucide="${isFiltered ? 'search-x' : 'sparkles'}" size="40" class="text-slate-400"></i>
+          <i data-lucide="${iconName}" size="40" class="text-slate-400"></i>
         </div>
         <h3 class="text-lg font-semibold text-slate-700 mb-2">
-          ${isFiltered ? '没有找到匹配的知识点' : isEmpty ? '知识库还是空的' : '暂无知识点'}
+          ${title}
         </h3>
         <p class="text-sm text-slate-500 mb-6 text-center max-w-md">
-          ${isFiltered 
-            ? '尝试调整搜索条件或筛选器，或清除筛选查看全部内容' 
-            : isEmpty
-              ? '从文档库提取知识卡片开始构建你的知识库'
-              : '当前筛选条件下没有知识点'}
+          ${description}
         </p>
-        <div class="flex items-center gap-3">
-          ${isEmpty ? `
-            <button 
-              id="btn-go-to-repository"
-              class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm hover:shadow-md flex items-center gap-2"
-            >
-              <i data-lucide="file-text" size="16"></i>
-              <span>去文档库提取知识</span>
-            </button>
-          ` : `
-            <button 
-              onclick="document.getElementById('knowledge-search-input').value = ''; document.getElementById('knowledge-search-input').dispatchEvent(new Event('input')); document.querySelectorAll('.knowledge-filter-btn, .category-filter-btn').forEach(btn => { if(btn.dataset.filter === 'all' || btn.dataset.category === 'all') btn.click(); });"
-              class="px-4 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
-            >
-              <i data-lucide="x" size="14"></i>
-              <span>清除筛选</span>
-            </button>
-          `}
-        </div>
+        ${buttonHtml ? `<div class="flex items-center gap-3">${buttonHtml}</div>` : ''}
       </div>
     `;
     
@@ -853,8 +906,8 @@ export function renderKnowledgeView() {
                 <h3 class="text-base font-bold text-emerald-900">本次新提取</h3>
                 <p class="text-xs text-emerald-600 mt-0.5">
                   ${otherItems.length === 0 && latestItems.length > 0 
-                    ? `共 ${latestItems.length} 条知识点（当前筛选下全部为本次新提取）` 
-                    : `共 ${latestItems.length} 条知识点`}
+                    ? `共 ${latestItems.length} 个知识点（当前筛选下全部为本次提取的知识点）` 
+                    : `共 ${latestItems.length} 个知识点`}
                 </p>
               </div>
             </div>
@@ -872,7 +925,7 @@ export function renderKnowledgeView() {
                 class="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:border-emerald-400 transition-colors shadow-sm flex items-center gap-1.5"
               >
                 <i data-lucide="filter" size="14"></i>
-                <span>只看这些卡片</span>
+                <span>只看本次新提取</span>
               </button>
             ` : `
               <button
@@ -880,7 +933,7 @@ export function renderKnowledgeView() {
                 class="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 border border-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
               >
                 <i data-lucide="filter" size="14"></i>
-                <span>只看这些卡片</span>
+                <span>只看本次新提取</span>
               </button>
               <button
                 id="btn-filter-all"
@@ -892,8 +945,8 @@ export function renderKnowledgeView() {
             `}
           </div>
           ${otherItems.length === 0 && latestItems.length > 0 
-            ? '<p class="text-xs text-emerald-600 mt-2 opacity-75">以下卡片都是本次新提取的，当前筛选条件下没有其他卡片</p>'
-            : '<p class="text-xs text-emerald-600 mt-2 opacity-75">点击"只看这些卡片"可仅查看本次新提取的知识点</p>'}
+            ? '<p class="text-xs text-emerald-600 mt-2 opacity-75">以下知识点都是本次新提取的，当前筛选条件下没有其他知识点</p>'
+            : '<p class="text-xs text-emerald-600 mt-2 opacity-75">点击"只看本次新提取"可仅查看本次新提取的知识点</p>'}
         </div>
       `;
 

@@ -230,9 +230,17 @@ function renderContent() {
       <i data-lucide="alert-circle" class="text-amber-600 flex-shrink-0 mt-0.5" size="22"></i>
       <div class="flex-1 min-w-0">
         <h4 class="text-sm font-bold text-amber-900 mb-2">低置信度提醒 (${currentItem.confidence_score}%)</h4>
-        <p class="text-xs text-amber-800 mb-4 leading-relaxed break-words">
+        <p class="text-xs text-amber-800 mb-3 leading-relaxed break-words">
           AI 对该内容的提取准确度未达到自动确认标准 (80%)。请检查内容是否准确，确认无误后点击"确认通过"。
         </p>
+        <div class="text-xs text-amber-700 bg-amber-100/50 rounded-lg p-3 mb-4">
+          <p class="font-medium mb-1">置信度说明：</p>
+          <ul class="list-disc list-inside space-y-0.5 text-amber-700/90">
+            <li><strong>≥85%</strong>：高置信度，可快速批量确认</li>
+            <li><strong>80-84%</strong>：中等置信度，建议简单检查后确认</li>
+            <li><strong>&lt;80%</strong>：低置信度，需要仔细审查内容准确性</li>
+          </ul>
+        </div>
         ${!isEditMode ? `
           <div class="flex flex-wrap gap-2">
             <button 
@@ -339,7 +347,7 @@ function renderContent() {
             </select>
           ` : `
             <div class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm ${!currentItem.subcategory || !currentItem.subcategory.name ? 'text-slate-400 italic' : ''}">
-              ${(currentItem.subcategory && currentItem.subcategory.name) ? currentItem.subcategory.name : '未分类（点击"调整"按钮设置）'}
+              ${(currentItem.subcategory && currentItem.subcategory.name) ? currentItem.subcategory.name : '未设置子分类（点击上方"调整"按钮可设置）'}
             </div>
           `}
         </div>
@@ -652,7 +660,7 @@ async function approveKnowledgeItem(itemId) {
 
     currentItem = response.data;
     renderDetailDrawer();
-    showToast('知识卡片已确认，将在智能问答中优先使用', 'success');
+    showToast('知识点已确认，现在可以在智能问答中使用', 'success');
     
     // 刷新列表 - 更新当前项的状态并刷新视图
     setTimeout(async () => {
@@ -699,7 +707,7 @@ async function approveKnowledgeItem(itemId) {
  */
 async function deleteKnowledgeItem(itemId) {
   try {
-    await showConfirm('确定要删除这个知识点吗？', {
+    await showConfirm('确定要删除这个知识点吗？\n\n删除后无法恢复，该知识点将从智能问答中移除。', {
       title: '确认删除',
       type: 'warning'
     });
@@ -808,10 +816,27 @@ function createStatusBadge(status, item = {}) {
       showManual: !isAutoConfirmed
     };
   } else if (status === 'pending') {
-    // 所有pending状态统一显示为"待确认"，无论置信度高低
+    // 所有pending状态统一显示为"待确认"
+    // 但根据置信度区分显示，帮助用户识别哪些可以快速批量确认
+    let pendingLabel = '待确认';
+    if (confidence >= 85) {
+      // 高置信度：可以快速批量确认
+      pendingLabel = `待确认 (${confidence}%)`;
+    } else if (confidence >= 80) {
+      // 中等置信度
+      pendingLabel = `待确认 (${confidence}%)`;
+    } else {
+      // 低置信度：需要仔细审查
+      pendingLabel = `待确认 (${confidence}%，需审查)`;
+    }
+    
     config = {
-      color: 'bg-slate-100 text-slate-500 border-slate-200',
-      label: '待确认',
+      color: confidence >= 85 
+        ? 'bg-amber-50 text-amber-700 border-amber-200' // 高置信度用稍微明显的颜色
+        : confidence >= 80
+        ? 'bg-slate-100 text-slate-500 border-slate-200'
+        : 'bg-orange-50 text-orange-600 border-orange-200', // 低置信度用橙色提醒
+      label: pendingLabel,
       icon: 'circle',
       showManual: false
     };

@@ -325,6 +325,13 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
             '尝试提取其他文档'
           ]
         });
+        
+        // 显示用户可见的警告提示
+        showToast(
+          '提取完成，但未生成知识点。可能原因：文档内容不适合提取、AI解析失败等。请检查文档内容或尝试其他文档。',
+          'warning',
+          8000 // 显示8秒，让用户有足够时间阅读
+        );
       }
       
       // 提取完成
@@ -454,7 +461,15 @@ async function pollExtractionStatus(extractionId, retryCount = 0) {
         });
       } else {
         // 如果没有进度回调，才在这里显示Toast
-        showToast(`提取完成！成功生成 ${extractedCount} 个知识点`, 'success');
+        if (extractedCount === 0) {
+          showToast(
+            '提取完成，但未生成知识点。可能原因：文档内容不适合提取、AI解析失败等。请检查文档内容或尝试其他文档。',
+            'warning',
+            8000
+          );
+        } else {
+          showToast(`提取完成！成功生成 ${extractedCount} 个知识点`, 'success');
+        }
       }
       
       // 刷新文档列表以更新提取状态（如果在文档库视图中）
