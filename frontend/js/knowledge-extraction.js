@@ -173,11 +173,16 @@ export async function extractFromDocuments(docIds, knowledgeBaseId = null, onPro
   }
 }
 
+// 轮询失败计数器（用于跟踪连续失败次数）
+const pollFailureCount = new Map();
+const MAX_POLL_FAILURES = 5; // 最多允许5次连续失败
+
 /**
  * 轮询提取状态
  * @param {string} extractionId - 提取任务ID
+ * @param {number} retryCount - 当前重试次数（内部使用）
  */
-async function pollExtractionStatus(extractionId) {
+async function pollExtractionStatus(extractionId, retryCount = 0) {
   const task = extractionTasks.get(extractionId);
   if (!task) {
     return;
@@ -185,6 +190,9 @@ async function pollExtractionStatus(extractionId) {
 
   try {
     const response = await knowledgeAPI.getExtractionStatus(extractionId);
+    
+    // 如果成功，重置失败计数
+    pollFailureCount.delete(extractionId);
     
     if (!response.success) {
       throw new Error(response.message || '获取状态失败');
@@ -455,8 +463,57 @@ async function pollExtractionStatus(extractionId) {
       }, 5000);
     }
   } catch (error) {
-    console.error('轮询提取状态失败:', error);
+    console.error('[提取] 轮询提取状态失败', {
+      extractionId,
+      error: error.message,
+      retryCount,
+      taskExists: !!task
+    });
+    
+    // 增加失败计数
+    const currentFailures = pollFailureCount.get(extractionId) || 0;
+    const newFailureCount = currentFailures + 1;
+    pollFailureCount.set(extractionId, newFailureCount);
+    
+    // 如果是网络错误且未超过最大失败次数，则重试
+    const isNetworkError = error.message.includes('无法连接到服务器') || 
+                          error.message.includes('Failed to fetch') ||
+                          error.message.includes('fetch failed');
+    
+    if (isNetworkError && newFailureCount < MAX_POLL_FAILURES) {
+      console.warn('[提取] 网络错误，将在3秒后重试', {
+        extractionId,
+        failureCount: newFailureCount,
+        maxFailures: MAX_POLL_FAILURES
+      });
+      
+      // 更新进度显示，但不标记为失败
+      const task = extractionTasks.get(extractionId);
+      if (task) {
+        updateExtractionProgress(extractionId, {
+          docName: task.docName || '文档',
+          status: 'processing',
+          stage: task.stage || 'extracting',
+          progress: task.progress || 0,
+          totalItems: task.totalItems || 0,
+          processedItems: task.processedItems || 0,
+          extractedCount: task.extractedCount || 0,
+          warning: `网络连接问题，正在重试... (${newFailureCount}/${MAX_POLL_FAILURES})`
+        });
+      }
+      
+      // 延迟后重试（逐渐增加延迟时间）
+      const retryDelay = Math.min(3000 * newFailureCount, 10000); // 最多10秒
+      setTimeout(() => pollExtractionStatus(extractionId, retryCount + 1), retryDelay);
+      return;
+    }
+    
+    // 超过最大失败次数或其他错误，标记为失败
     const task = extractionTasks.get(extractionId);
+    const errorMessage = isNetworkError 
+      ? `无法连接到服务器（已重试${newFailureCount}次），请检查网络连接或Railway服务状态`
+      : (error.message || '获取提取状态失败');
+    
     updateExtractionProgress(extractionId, {
       docName: task?.docName || '文档',
       status: 'failed',
@@ -465,9 +522,13 @@ async function pollExtractionStatus(extractionId) {
       totalItems: task?.totalItems || 0,
       processedItems: task?.processedItems || 0,
       extractedCount: task?.extractedCount || 0,
-      error: '获取提取状态失败'
+      error: errorMessage
     });
-    showToast('获取提取状态失败', 'error');
+    
+    showToast(errorMessage, 'error');
+    
+    // 清理失败计数和任务
+    pollFailureCount.delete(extractionId);
     setTimeout(() => {
       extractionTasks.delete(extractionId);
       removeExtractionTask(extractionId);
