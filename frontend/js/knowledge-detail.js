@@ -701,8 +701,29 @@ function handleSelectOutsideClick(e) {
  */
 function initCustomSelects() {
   // 初始化图标
-  if (window.lucide) {
-    window.lucide.createIcons(document.getElementById('knowledge-detail-drawer'));
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    // 安全地初始化图标：使用 drawerElement 变量或查找实际存在的元素
+    const drawerEl = drawerElement || document.getElementById('knowledge-detail-drawer');
+    if (drawerEl) {
+      try {
+        window.lucide.createIcons(drawerEl);
+      } catch (error) {
+        console.warn('初始化 Lucide 图标失败:', error);
+        // 降级方案：在整个文档中初始化（可能较慢，但至少不会出错）
+        try {
+          window.lucide.createIcons();
+        } catch (fallbackError) {
+          console.error('Lucide 图标初始化完全失败:', fallbackError);
+        }
+      }
+    } else {
+      // 如果找不到抽屉元素，在整个文档中初始化
+      try {
+        window.lucide.createIcons();
+      } catch (error) {
+        console.error('Lucide 图标初始化失败:', error);
+      }
+    }
   }
   
   // 主分类选择框
