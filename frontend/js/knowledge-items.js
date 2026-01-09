@@ -100,6 +100,7 @@ export async function loadKnowledgeItems(filters = {}) {
 
     applyFilters();
     renderKnowledgeView();
+    renderCategoryFilters(); // 更新分类筛选器数量
     
     if (timer && perfMonitor) {
       perfMonitor.end(timer, { success: true, itemCount: data?.length || 0 });
@@ -111,6 +112,7 @@ export async function loadKnowledgeItems(filters = {}) {
     console.error('加载知识列表失败:', error);
     knowledgeState.loading = false;
     renderKnowledgeView();
+    renderCategoryFilters(); // 更新分类筛选器数量（即使出错也要更新，避免显示旧数据）
     // 错误提示会在调用处处理
     throw error;
   }
@@ -1082,6 +1084,7 @@ export function handleSearch(query) {
   knowledgeState.currentPage = 1;
   applyFilters();
   renderKnowledgeView();
+  renderCategoryFilters(); // 更新分类筛选器数量
 }
 
 /**
