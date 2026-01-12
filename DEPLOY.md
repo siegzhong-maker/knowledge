@@ -113,16 +113,7 @@ Railway 会自动从 Postgres 服务注入：
 2. 检查域名配置
 3. 查看日志确认应用是否正常启动
 
-## 其他部署平台
-
-### Render
-
-Render 是另一个流行的部署平台，支持免费套餐：
-
-1. 注册 [Render](https://render.com)
-2. 创建 Web Service，连接 GitHub 仓库
-3. 需要外部数据库（如 Supabase），因为 Render 免费套餐不支持持久化磁盘
-4. 配置 `DATABASE_URL` 环境变量
+## 其他部署方式
 
 ### 本地部署
 
