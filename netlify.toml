@@ -47,6 +47,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/settings/supabase-config"
+  to = "/.netlify/functions/supabase-config"
+  status = 200
+  force = true
+
 # 注意：其他 API 路由需要创建对应的 Netlify Functions
 # 例如：/api/knowledge/*, /api/ai/*, /api/consultation/* 等
 # 暂时使用代理到后端（如果后端单独部署）或创建对应的 Functions

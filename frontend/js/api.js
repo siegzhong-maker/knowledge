@@ -265,29 +265,40 @@ export const exportAPI = {
   }
 };
 
-// PDF上传API
+// PDF上传API - 使用 Supabase Storage 直接上传
 export const pdfAPI = {
   upload: async (file, moduleId = null, knowledgeBaseId = null) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (moduleId) {
-      formData.append('moduleId', moduleId);
+    try {
+      // 1. 先上传文件到 Supabase Storage
+      const { uploadFileToStorage } = await import('./supabase-client.js');
+      const uploadResult = await uploadFileToStorage(file, 'uploads');
+      
+      // 2. 然后调用后端 API 创建文档记录
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fileUrl: uploadResult.url,
+          fileName: uploadResult.fileName,
+          fileSize: file.size,
+          type: 'pdf',
+          knowledge_base_id: knowledgeBaseId,
+          module_id: moduleId
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: '创建文档记录失败' }));
+        throw new Error(error.message || '创建文档记录失败');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('PDF上传失败:', error);
+      throw error;
     }
-    if (knowledgeBaseId) {
-      formData.append('knowledge_base_id', knowledgeBaseId);
-    }
-    
-    const response = await fetch(`${API_BASE}/upload/pdf`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'PDF上传失败' }));
-      throw new Error(error.message || 'PDF上传失败');
-    }
-    
-    return await response.json();
   },
   getContent: async (id) => {
     try {
