@@ -35,9 +35,10 @@ export async function initKnowledgeBases() {
       await switchKnowledgeBase(savedKbId);
       switched = true;
     } else {
-      // 使用默认知识库
-      const defaultKb = knowledgeBaseState.knowledgeBases.find(kb => kb.is_default === 1) ||
-                       knowledgeBaseState.knowledgeBases[0];
+      // 使用默认知识库（兼容布尔值和数字）
+      const defaultKb = knowledgeBaseState.knowledgeBases.find(kb => 
+        kb.is_default === true || kb.is_default === 1 || kb.is_default === 'true'
+      ) || knowledgeBaseState.knowledgeBases[0];
       if (defaultKb) {
         await switchKnowledgeBase(defaultKb.id);
         switched = true;

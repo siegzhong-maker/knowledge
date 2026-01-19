@@ -28,11 +28,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script>
     // 配置 Supabase（前端使用 anon key，这是公开的，可以安全暴露）
-    // 获取 anon key：Supabase Dashboard > Settings > API > anon public key
     window.SUPABASE_URL = 'https://qrpexoehzbdfbzgzvwsc.supabase.co';
-    // TODO: 请从 Supabase Dashboard 获取 anon key 并配置在这里
-    // 或者通过环境变量注入（需要在 Netlify 构建时注入）
-    window.SUPABASE_ANON_KEY = null; // 需要配置
+    window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFycGV4b2VoemJkZmJ6Z3p2d3NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NTc0MTgsImV4cCI6MjA4NDMzMzQxOH0.6mXzFcoImi6jCb_zANpmG_lR6GLlOv6Q9eUgUFspVZE';
   </script>
   
   <!-- 非关键资源：FontAwesome（异步加载） -->
