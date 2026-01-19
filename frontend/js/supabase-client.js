@@ -2,9 +2,8 @@
 // 注意：前端使用 anon key，不是 service_role key
 
 // 从环境变量或配置获取 Supabase 信息
-// 在生产环境中，这些值应该通过 API 获取或配置
 const SUPABASE_URL = window.SUPABASE_URL || 'https://qrpexoehzbdfbzgzvwsc.supabase.co';
-const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || null;
+let SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || null;
 
 // 动态加载 Supabase 客户端
 let supabaseClient = null;
@@ -14,35 +13,50 @@ export async function getSupabaseClient() {
     return supabaseClient;
   }
 
-  // 如果没有 anon key，尝试从 API 获取配置
-  if (!SUPABASE_ANON_KEY) {
+  // 检查 anon key
+  const anonKey = window.SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
+  
+  if (!anonKey) {
+    // 尝试从 API 获取配置
     try {
       const response = await fetch('/api/settings/supabase-config');
       const data = await response.json();
-      if (data.success && data.data) {
-        window.SUPABASE_URL = data.data.url;
+      if (data.success && data.data && data.data.anonKey) {
         window.SUPABASE_ANON_KEY = data.data.anonKey;
+        SUPABASE_ANON_KEY = data.data.anonKey;
       }
     } catch (error) {
-      console.warn('无法获取 Supabase 配置，将使用默认值');
+      console.warn('无法从 API 获取 Supabase 配置');
     }
+  }
+
+  // 如果还是没有 anon key，抛出清晰的错误
+  const finalAnonKey = window.SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
+  if (!finalAnonKey) {
+    throw new Error(
+      'Supabase anon key 未配置。\n\n' +
+      '请按以下步骤配置：\n' +
+      '1. 访问 Supabase Dashboard > Settings > API\n' +
+      '2. 复制 "anon" "public" key\n' +
+      '3. 在 frontend/index.html 中配置：window.SUPABASE_ANON_KEY = "您的 anon key"\n\n' +
+      '或者查看 SUPABASE_ANON_KEY_SETUP.md 获取详细说明。'
+    );
   }
 
   // 动态导入 Supabase 客户端
   if (typeof window.supabase === 'undefined') {
-    // 如果 Supabase 未加载，动态加载
     await loadSupabaseScript();
   }
 
   if (window.supabase && window.supabase.createClient) {
     supabaseClient = window.supabase.createClient(
       window.SUPABASE_URL || SUPABASE_URL,
-      window.SUPABASE_ANON_KEY || SUPABASE_ANON_KEY || ''
+      finalAnonKey
     );
     return supabaseClient;
   }
 
-  throw new Error('Supabase 客户端未加载');
+  throw new Error('Supabase 客户端未加载，请检查 Supabase JS 库是否正确加载');
 }
 
 // 动态加载 Supabase JS 库

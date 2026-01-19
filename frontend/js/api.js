@@ -271,7 +271,26 @@ export const pdfAPI = {
     try {
       // 1. 先上传文件到 Supabase Storage
       const { uploadFileToStorage } = await import('./supabase-client.js');
-      const uploadResult = await uploadFileToStorage(file, 'uploads');
+      let uploadResult;
+      
+      try {
+        uploadResult = await uploadFileToStorage(file, 'uploads');
+      } catch (storageError) {
+        // 如果 Supabase Storage 上传失败，提供清晰的错误信息
+        if (storageError.message && storageError.message.includes('supabaseKey')) {
+          throw new Error(
+            '文件上传失败：Supabase anon key 未配置。\n\n' +
+            '请按以下步骤配置：\n' +
+            '1. 访问 Supabase Dashboard (https://app.supabase.com)\n' +
+            '2. 进入项目 > Settings > API\n' +
+            '3. 复制 "anon" "public" key\n' +
+            '4. 在 frontend/index.html 中配置：window.SUPABASE_ANON_KEY = "您的 anon key"\n' +
+            '5. 重新部署或刷新页面\n\n' +
+            '详细说明请查看：SUPABASE_ANON_KEY_SETUP.md'
+          );
+        }
+        throw storageError;
+      }
       
       // 2. 然后调用后端 API 创建文档记录
       const response = await fetch(`${API_BASE}/upload`, {
