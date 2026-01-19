@@ -14,8 +14,7 @@
   directory = "netlify/functions"
   # Node.js 版本
   node_bundler = "esbuild"
-  # 函数超时时间（秒，最大 26 秒）
-  timeout = 26
+  # 注意：timeout 配置已移除，使用 Netlify 默认值（免费版 10 秒，Pro 版 26 秒）
 
 # 重定向规则（将 API 请求路由到 Functions）
 [[redirects]]
