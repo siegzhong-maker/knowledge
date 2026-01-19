@@ -95,12 +95,54 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // GET /api/items/stats - 获取统计信息
+    if (method === 'GET' && path === '/stats') {
+      // 获取总数
+      const { count: total } = await db.client.from('source_items').select('*', { count: 'exact', head: true });
+      
+      // 获取各类型数量
+      const { count: pdfCount } = await db.client.from('source_items').select('*', { count: 'exact', head: true }).eq('type', 'pdf');
+      const { count: urlCount } = await db.client.from('source_items').select('*', { count: 'exact', head: true }).eq('type', 'url');
+      
+      // 获取已提取数量
+      const { count: extractedCount } = await db.client.from('source_items').select('*', { count: 'exact', head: true }).eq('knowledge_extracted', true);
+      
+      // 获取今日新增（今天 00:00 到现在）
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayTimestamp = todayStart.getTime();
+      const { count: todayCount } = await db.client.from('source_items')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayTimestamp);
+      
+      return {
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          success: true,
+          data: {
+            total: total || 0,
+            pdf: pdfCount || 0,
+            url: urlCount || 0,
+            extracted: extractedCount || 0,
+            today: todayCount || 0
+          }
+        })
+      };
+    }
+
     // GET /api/items/:id - 获取单个知识项
-    if (method === 'GET' && path !== '/' && path !== '') {
+    if (method === 'GET' && path !== '/' && path !== '' && path !== '/stats') {
       const id = path.startsWith('/') ? path.substring(1) : path;
+      console.log('获取文档详情:', { id, path, eventPath: event.path });
+      
       const { data, error } = await db.client.from('source_items').select('*').eq('id', id).single();
       
       if (error) {
+        console.error('查询文档失败:', { id, error: error.message, code: error.code });
         if (error.code === 'PGRST116') {
           return {
             statusCode: 404,
@@ -113,6 +155,20 @@ exports.handler = async (event, context) => {
         }
         throw error;
       }
+      
+      if (!data) {
+        console.error('文档不存在:', id);
+        return {
+          statusCode: 404,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ success: false, message: '文档不存在' })
+        };
+      }
+      
+      console.log('文档查询成功:', { id, type: data.type, hasFilePath: !!data.file_path });
       
       return {
         statusCode: 200,
