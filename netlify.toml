@@ -48,6 +48,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/files/*"
+  to = "/.netlify/functions/files/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/settings/supabase-config"
   to = "/.netlify/functions/supabase-config"
   status = 200

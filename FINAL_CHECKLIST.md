@@ -17,9 +17,22 @@
    - 知识库检查逻辑已修复
    - 错误处理已改进
 
-## 📋 剩余步骤
+## 📋 剩余步骤（按顺序执行）
 
-### 步骤 1：初始化知识库和模块（必须）
+### 步骤 1：修复 Storage RLS 策略（必须，先执行这个）
+
+在 Supabase SQL Editor 中执行：
+
+1. **执行 `FIX_STORAGE_RLS.sql`**
+   - 创建允许 anon key 上传文件的策略
+   - 解决 "new row violates row-level security policy" 错误
+
+**验证**：
+- 执行后刷新应用页面
+- 尝试上传 PDF 文件
+- 应该可以成功上传（不再出现 RLS 错误）
+
+### 步骤 2：初始化知识库和模块（必须）
 
 在 Supabase SQL Editor 中执行：
 
