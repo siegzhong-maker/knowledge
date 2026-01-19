@@ -1,0 +1,65 @@
+[build]
+  # 发布目录（前端静态文件）
+  publish = "frontend"
+  # 构建命令（如果需要构建，否则留空）
+  command = ""
+
+[build.environment]
+  # Node.js 版本
+  NODE_VERSION = "20"
+
+# Netlify Functions 配置
+[functions]
+  # Functions 目录
+  directory = "netlify/functions"
+  # Node.js 版本
+  node_bundler = "esbuild"
+  # 函数超时时间（秒，最大 26 秒）
+  timeout = 26
+
+# 重定向规则（将 API 请求路由到 Functions）
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/items/*"
+  to = "/.netlify/functions/items/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/settings/*"
+  to = "/.netlify/functions/settings/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/knowledge-bases/*"
+  to = "/.netlify/functions/knowledge-bases/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/upload/*"
+  to = "/.netlify/functions/upload/:splat"
+  status = 200
+  force = true
+
+# 注意：其他 API 路由需要创建对应的 Netlify Functions
+# 例如：/api/knowledge/*, /api/ai/*, /api/consultation/* 等
+# 暂时使用代理到后端（如果后端单独部署）或创建对应的 Functions
+
+# 前端路由（SPA 支持）- 必须在 API 路由之后
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 环境变量（在 Netlify 控制台中配置）
+# SUPABASE_URL = "your-supabase-url"
+# SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
+# DEEPSEEK_API_KEY = "your-deepseek-api-key"
+

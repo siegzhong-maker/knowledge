@@ -10,4 +10,5 @@ build/
 database/.encryption_key
 backend/uploads/
 DATABASE_URL.txt
+.vscode/
 
