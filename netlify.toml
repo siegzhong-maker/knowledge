@@ -59,8 +59,14 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/knowledge/*"
+  to = "/.netlify/functions/knowledge/:splat"
+  status = 200
+  force = true
+
 # 注意：其他 API 路由需要创建对应的 Netlify Functions
-# 例如：/api/knowledge/*, /api/ai/*, /api/consultation/* 等
+# 例如：/api/ai/*, /api/consultation/* 等
 # 暂时使用代理到后端（如果后端单独部署）或创建对应的 Functions
 
 # 前端路由（SPA 支持）- 必须在 API 路由之后
