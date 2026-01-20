@@ -114,6 +114,13 @@ async function updateTaskStatus(extractionId, updates) {
  */
 async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userApiKey, extractionOptions) {
   try {
+    console.log('[Knowledge] 开始启动提取任务', {
+      extractionId,
+      itemIds,
+      knowledgeBaseId,
+      hasUserApiKey: !!userApiKey
+    });
+
     // 设置初始状态
     await updateTaskStatus(extractionId, {
       status: 'processing',
@@ -129,36 +136,39 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
       progressHistory: []
     });
 
-    // 动态导入知识提取服务
-    // 由于 knowledge-extractor 依赖 backend/services/db，我们需要确保环境变量正确
-    // Supabase 使用 PostgreSQL，需要提供连接字符串
-    // 注意：Supabase 连接字符串格式：postgresql://postgres.[PROJECT_REF]:[PASSWORD]@[HOST]:[PORT]/postgres
-    // 如果环境变量中没有 DATABASE_URL，我们需要从 SUPABASE_URL 构建
+    // 检查 DATABASE_URL
     if (!process.env.DATABASE_URL) {
-      // 尝试从 SUPABASE_URL 构建连接字符串
-      // 但 Supabase 需要密码，这通常需要单独配置 SUPABASE_DB_PASSWORD 环境变量
-      // 或者使用 Supabase 提供的连接池 URL
-      const supabaseUrl = process.env.SUPABASE_URL;
-      if (supabaseUrl) {
-        // 从 Supabase URL 提取项目引用
-        const projectRef = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1];
-        if (projectRef && process.env.SUPABASE_DB_PASSWORD) {
-          // 构建连接字符串（使用连接池）
-          // 注意：Supabase 连接池的 URL 格式可能因区域而异
-          // 可以从 Supabase Dashboard > Settings > Database > Connection string 获取
-          const region = process.env.SUPABASE_REGION || 'us-east-1';
-          process.env.DATABASE_URL = `postgresql://postgres.${projectRef}:${process.env.SUPABASE_DB_PASSWORD}@aws-0-${region}.pooler.supabase.com:6543/postgres`;
-        } else {
-          console.warn('[Knowledge] ⚠️ DATABASE_URL 未设置，且无法从 SUPABASE_URL 构建。知识提取可能失败。');
-          console.warn('[Knowledge] 请在 Netlify 环境变量中设置 DATABASE_URL 或 SUPABASE_DB_PASSWORD');
+      console.error('[Knowledge] ❌ DATABASE_URL 未配置！知识提取需要直接连接 PostgreSQL 数据库。');
+      console.error('[Knowledge] 请在 Netlify Dashboard > Environment variables 中配置 DATABASE_URL');
+      console.error('[Knowledge] 参考: GET_SUPABASE_DATABASE_URL.md');
+      
+      await updateTaskStatus(extractionId, {
+        status: 'failed',
+        error: 'DATABASE_URL 环境变量未配置。知识提取需要直接连接 PostgreSQL 数据库。请在 Netlify Dashboard 中配置 DATABASE_URL 环境变量。',
+        stage: 'failed',
+        errorDetails: {
+          name: 'ConfigurationError',
+          message: 'DATABASE_URL environment variable is required for knowledge extraction',
+          solution: 'Configure DATABASE_URL in Netlify Dashboard > Environment variables. See GET_SUPABASE_DATABASE_URL.md for details.'
         }
-      }
+      });
+      return;
     }
+
+    console.log('[Knowledge] DATABASE_URL 已配置:', process.env.DATABASE_URL.replace(/:[^:@]+@/, ':****@'));
     process.env.DB_TYPE = 'postgres';
     
     // 导入知识提取服务
     // 注意：knowledge-extractor 使用 backend/services/db，它会根据 DATABASE_URL 环境变量选择数据库
-    const knowledgeExtractor = require('../../backend/services/knowledge-extractor');
+    let knowledgeExtractor;
+    try {
+      console.log('[Knowledge] 正在导入知识提取服务...');
+      knowledgeExtractor = require('../../backend/services/knowledge-extractor');
+      console.log('[Knowledge] ✅ 知识提取服务导入成功');
+    } catch (importError) {
+      console.error('[Knowledge] ❌ 导入知识提取服务失败:', importError);
+      throw new Error(`无法导入知识提取服务: ${importError.message}`);
+    }
     
     // 创建进度更新回调
     const updateProgress = async (progress) => {
@@ -222,29 +232,41 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
         progress: 100
       });
     }).catch(error => {
-      console.error(`提取任务失败 (extractionId: ${extractionId}):`, error);
+      console.error(`[Knowledge] ❌ 提取任务失败 (extractionId: ${extractionId}):`, {
+        error: error.message,
+        name: error.name,
+        stack: error.stack,
+        cause: error.cause
+      });
       return updateTaskStatus(extractionId, {
         status: 'failed',
-        error: error.message,
+        error: error.message || '提取任务执行失败',
         stage: 'failed',
         knowledgeItemIds: [],
         knowledgeItems: [],
         errorDetails: {
           name: error.name,
           message: error.message,
-          stack: error.stack
+          stack: error.stack?.substring(0, 1000), // 限制堆栈长度
+          cause: error.cause
         }
       });
     });
   } catch (error) {
-    console.error('启动提取任务失败:', error);
+    console.error('[Knowledge] ❌ 启动提取任务失败:', {
+      error: error.message,
+      name: error.name,
+      stack: error.stack,
+      extractionId
+    });
     await updateTaskStatus(extractionId, {
       status: 'failed',
-      error: error.message,
+      error: error.message || '启动提取任务失败',
       stage: 'failed',
       errorDetails: {
         name: error.name,
-        message: error.message
+        message: error.message,
+        stack: error.stack?.substring(0, 1000)
       }
     });
   }
