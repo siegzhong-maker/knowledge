@@ -234,7 +234,7 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
     let knowledgeExtractor;
     try {
       console.log('[Knowledge] 正在导入知识提取服务...');
-      knowledgeExtractor = require('../../backend/services/knowledge-extractor');
+      knowledgeExtractor = require('./services/knowledge-extractor');
       console.log('[Knowledge] ✅ 知识提取服务导入成功');
     } catch (importError) {
       console.error('[Knowledge] ❌ 导入知识提取服务失败:', importError);
