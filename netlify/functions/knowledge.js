@@ -230,23 +230,33 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
     process.env.DB_TYPE = 'postgres';
     
     // 导入知识提取服务
-    // 注意：knowledge-extractor 使用 backend/services/db，它会根据 DATABASE_URL 环境变量选择数据库
+    // 注意：在 Netlify Functions 中，esbuild 可能不会自动包含子目录中的文件
+    // 我们需要使用相对路径，并确保文件被正确打包
     let knowledgeExtractor;
     try {
       console.log('[Knowledge] 正在导入知识提取服务...');
       console.log('[Knowledge] __dirname:', __dirname);
-      const knowledgeExtractorPath = path.join(__dirname, 'services', 'knowledge-extractor');
-      console.log('[Knowledge] 知识提取服务路径:', knowledgeExtractorPath);
-      knowledgeExtractor = require(knowledgeExtractorPath);
+      console.log('[Knowledge] process.cwd():', process.cwd());
+      
+      // 使用相对路径导入（相对于当前文件）
+      // 在 Netlify Functions 中，__dirname 指向 /var/task/netlify/functions/
+      // 所以 ./services/knowledge-extractor 应该指向 /var/task/netlify/functions/services/knowledge-extractor
+      knowledgeExtractor = require('./services/knowledge-extractor');
       console.log('[Knowledge] ✅ 知识提取服务导入成功');
     } catch (importError) {
       console.error('[Knowledge] ❌ 导入知识提取服务失败:', importError);
       console.error('[Knowledge] 错误详情:', {
         message: importError.message,
         code: importError.code,
-        stack: importError.stack
+        stack: importError.stack,
+        __dirname: __dirname,
+        cwd: process.cwd(),
+        requireCache: Object.keys(require.cache)
       });
-      throw new Error(`无法导入知识提取服务: ${importError.message}`);
+      
+      // 如果相对路径失败，可能是 esbuild 没有包含这些文件
+      // 尝试使用动态导入（但这在 CommonJS 中可能不工作）
+      throw new Error(`无法导入知识提取服务: ${importError.message}。请确保 netlify/functions/services/ 目录中的文件被正确打包。`);
     }
     
     // 创建进度更新回调

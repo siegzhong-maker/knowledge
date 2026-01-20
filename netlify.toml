@@ -13,7 +13,8 @@
   # Functions 目录
   directory = "netlify/functions"
   # Node.js 版本
-  node_bundler = "esbuild"
+  # 使用 nft (Node Function Template) 而不是 esbuild，以确保包含所有依赖文件
+  node_bundler = "nft"
   # 注意：timeout 配置已移除，使用 Netlify 默认值（免费版 10 秒，Pro 版 26 秒）
 
 # 重定向规则（将 API 请求路由到 Functions）
