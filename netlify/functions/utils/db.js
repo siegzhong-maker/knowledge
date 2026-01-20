@@ -105,11 +105,50 @@ class SupabaseDB {
       const { operation, table, values, where } = this.parseSQL(sql, params);
       
       if (operation === 'INSERT') {
-        const { data, error } = await this._client.from(table).insert(values).select();
+        // 如果 values 是对象（从 parseSQL 解析得到），直接使用
+        // 否则，从 SQL 语句中提取字段名，从 params 中提取值
+        let insertData = values;
+        if (!insertData || Object.keys(insertData).length === 0) {
+          // 从 SQL 语句中提取字段名
+          const fieldsMatch = sql.match(/INSERT\s+INTO\s+\w+\s*\(([^)]+)\)/i);
+          if (fieldsMatch && params.length > 0) {
+            const fields = fieldsMatch[1].split(',').map(f => f.trim());
+            insertData = {};
+            fields.forEach((field, index) => {
+              if (index < params.length) {
+                insertData[field] = params[index];
+              }
+            });
+          } else {
+            // 如果无法解析，尝试使用 params 作为对象
+            insertData = params[0] || {};
+          }
+        }
+        
+        const { data, error } = await this._client.from(table).insert(insertData).select();
         if (error) throw error;
         return { lastID: data[0]?.id, changes: 1 };
       } else if (operation === 'UPDATE') {
-        let query = this._client.from(table).update(values);
+        // 对于 UPDATE，需要从 SQL 和 params 中提取更新字段
+        let updateData = values;
+        if (!updateData || Object.keys(updateData).length === 0) {
+          // 从 SQL 语句中提取 SET 子句
+          const setMatch = sql.match(/SET\s+(.+?)(?:\s+WHERE|$)/i);
+          if (setMatch) {
+            const setClause = setMatch[1];
+            const assignments = setClause.split(',').map(a => a.trim());
+            updateData = {};
+            let paramIndex = 0;
+            assignments.forEach(assignment => {
+              const match = assignment.match(/(\w+)\s*=\s*\?/i);
+              if (match && paramIndex < params.length) {
+                updateData[match[1]] = params[paramIndex++];
+              }
+            });
+          }
+        }
+        
+        let query = this._client.from(table).update(updateData);
         if (where) {
           query = this.applyWhere(query, where);
         }
@@ -155,9 +194,27 @@ class SupabaseDB {
     const normalized = sql.trim().toUpperCase();
     let paramIndex = 0;
     
-    // 提取表名
+    // 提取表名（支持 SELECT, INSERT, UPDATE, DELETE）
+    let table = null;
     const fromMatch = sql.match(/FROM\s+(\w+)/i);
-    const table = fromMatch ? fromMatch[1] : null;
+    if (fromMatch) {
+      table = fromMatch[1];
+    } else {
+      const insertMatch = sql.match(/INSERT\s+INTO\s+(\w+)/i);
+      if (insertMatch) {
+        table = insertMatch[1];
+      } else {
+        const updateMatch = sql.match(/UPDATE\s+(\w+)/i);
+        if (updateMatch) {
+          table = updateMatch[1];
+        } else {
+          const deleteMatch = sql.match(/DELETE\s+FROM\s+(\w+)/i);
+          if (deleteMatch) {
+            table = deleteMatch[1];
+          }
+        }
+      }
+    }
     
     // 提取 SELECT 字段
     const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM/i);
