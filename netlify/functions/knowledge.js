@@ -449,13 +449,29 @@ exports.handler = async (event, context) => {
         // 即使创建失败，也继续尝试启动任务（可能会再次失败，但至少会记录错误）
       }
       
-      // 异步执行提取任务
-      startExtractionTask(itemIds, targetKnowledgeBaseId, extractionId, userApiKey, extractionOptions)
-        .catch(error => {
-          console.error('[Knowledge] ❌ 启动提取任务失败:', error);
-        });
+      // 使用 setImmediate 确保函数立即返回，任务在下一个事件循环中执行
+      // 这可以避免 Netlify Function 超时（免费版 10 秒，Pro 版 26 秒）
+      setImmediate(() => {
+        startExtractionTask(itemIds, targetKnowledgeBaseId, extractionId, userApiKey, extractionOptions)
+          .catch(error => {
+            console.error('[Knowledge] ❌ 启动提取任务失败:', error);
+            // 更新任务状态为失败
+            updateTaskStatus(extractionId, {
+              status: 'failed',
+              error: error.message,
+              stage: 'failed',
+              errorDetails: {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+              }
+            }).catch(updateError => {
+              console.error('[Knowledge] ❌ 更新任务失败状态也失败:', updateError);
+            });
+          });
+      });
 
-      // 立即返回提取任务ID
+      // 立即返回提取任务ID（不等待任务开始执行）
       return createSuccessResponse({
         data: {
           extractionId,
