@@ -234,10 +234,18 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
     let knowledgeExtractor;
     try {
       console.log('[Knowledge] 正在导入知识提取服务...');
-      knowledgeExtractor = require('./services/knowledge-extractor');
+      console.log('[Knowledge] __dirname:', __dirname);
+      const knowledgeExtractorPath = path.join(__dirname, 'services', 'knowledge-extractor');
+      console.log('[Knowledge] 知识提取服务路径:', knowledgeExtractorPath);
+      knowledgeExtractor = require(knowledgeExtractorPath);
       console.log('[Knowledge] ✅ 知识提取服务导入成功');
     } catch (importError) {
       console.error('[Knowledge] ❌ 导入知识提取服务失败:', importError);
+      console.error('[Knowledge] 错误详情:', {
+        message: importError.message,
+        code: importError.code,
+        stack: importError.stack
+      });
       throw new Error(`无法导入知识提取服务: ${importError.message}`);
     }
     
