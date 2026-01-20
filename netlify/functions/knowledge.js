@@ -258,12 +258,22 @@ exports.handler = async (event, context) => {
 
   // 解析路径
   let path = event.path;
+  console.log('[Knowledge Function] 原始路径:', path);
+  
   if (path.startsWith('/.netlify/functions/knowledge')) {
     path = path.replace('/.netlify/functions/knowledge', '');
   } else if (path.startsWith('/api/knowledge')) {
     path = path.replace('/api/knowledge', '');
   }
+  
+  // 处理查询参数（Netlify 会将查询参数放在 event.path 中）
+  const queryIndex = path.indexOf('?');
+  if (queryIndex !== -1) {
+    path = path.substring(0, queryIndex);
+  }
+  
   path = path || '/';
+  console.log('[Knowledge Function] 解析后的路径:', path, '方法:', event.httpMethod);
   
   const method = event.httpMethod;
 
@@ -376,6 +386,7 @@ exports.handler = async (event, context) => {
 
     // GET /api/knowledge/items - 获取知识列表
     if (method === 'GET' && path === '/items') {
+      console.log('[Knowledge Function] 获取知识列表，查询参数:', event.queryStringParameters);
       const queryParams = event.queryStringParameters || {};
       const {
         knowledgeBaseId,
