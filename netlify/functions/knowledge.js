@@ -390,19 +390,33 @@ exports.handler = async (event, context) => {
         ? calculateETA(progressHistory, progress, task.start_time || Date.now())
         : null;
 
-      return createSuccessResponse({
-        data: {
-          status: task.status,
-          stage: task.stage || 'extracting',
-          totalItems: task.total_items || 0,
-          processedItems: task.processed_items || 0,
-          extractedCount: task.extracted_count || 0,
-          currentDocIndex: task.current_doc_index || 0,
-          knowledgeItems: knowledgeItems || [],
-          knowledgeItemIds: knowledgeItemIds || [],
-          progress: progress,
-          etaSeconds: etaSeconds
+      const responseData = {
+        status: task.status,
+        stage: task.stage || 'extracting',
+        totalItems: task.total_items || 0,
+        processedItems: task.processed_items || 0,
+        extractedCount: task.extracted_count || 0,
+        currentDocIndex: task.current_doc_index || 0,
+        knowledgeItems: knowledgeItems || [],
+        knowledgeItemIds: knowledgeItemIds || [],
+        progress: progress,
+        etaSeconds: etaSeconds
+      };
+
+      // 如果任务失败，包含错误信息
+      if (task.status === 'failed') {
+        responseData.error = task.error || '提取任务失败';
+        if (task.error_details) {
+          try {
+            responseData.errorDetails = JSON.parse(task.error_details);
+          } catch (e) {
+            responseData.errorDetails = { message: task.error_details };
+          }
         }
+      }
+
+      return createSuccessResponse({
+        data: responseData
       });
     }
 
