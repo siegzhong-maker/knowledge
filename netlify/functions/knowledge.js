@@ -314,11 +314,13 @@ exports.handler = async (event, context) => {
 
       // 立即返回提取任务ID
       return createSuccessResponse({
-        extractionId,
-        status: 'processing',
-        totalItems: itemIds.length,
-        processedItems: 0,
-        extractedCount: 0
+        data: {
+          extractionId,
+          status: 'processing',
+          totalItems: itemIds.length,
+          processedItems: 0,
+          extractedCount: 0
+        }
       });
     }
 
@@ -357,16 +359,18 @@ exports.handler = async (event, context) => {
         : null;
 
       return createSuccessResponse({
-        status: task.status,
-        stage: task.stage || 'extracting',
-        totalItems: task.total_items || 0,
-        processedItems: task.processed_items || 0,
-        extractedCount: task.extracted_count || 0,
-        currentDocIndex: task.current_doc_index || 0,
-        knowledgeItems: knowledgeItems || [],
-        knowledgeItemIds: knowledgeItemIds || [],
-        progress: progress,
-        etaSeconds: etaSeconds
+        data: {
+          status: task.status,
+          stage: task.stage || 'extracting',
+          totalItems: task.total_items || 0,
+          processedItems: task.processed_items || 0,
+          extractedCount: task.extracted_count || 0,
+          currentDocIndex: task.current_doc_index || 0,
+          knowledgeItems: knowledgeItems || [],
+          knowledgeItemIds: knowledgeItemIds || [],
+          progress: progress,
+          etaSeconds: etaSeconds
+        }
       });
     }
 
