@@ -374,6 +374,131 @@ exports.handler = async (event, context) => {
       });
     }
 
+    // GET /api/knowledge/items - 获取知识列表
+    if (method === 'GET' && path === '/items') {
+      const queryParams = event.queryStringParameters || {};
+      const {
+        knowledgeBaseId,
+        status,
+        category,
+        tags,
+        search,
+        page = 1,
+        limit = 50
+      } = queryParams;
+
+      try {
+        // 先获取总数
+        let countQuery = db.client
+          .from('personal_knowledge_items')
+          .select('*', { count: 'exact', head: true });
+
+        // 应用过滤条件（用于计数）
+        if (knowledgeBaseId) {
+          countQuery = countQuery.eq('knowledge_base_id', knowledgeBaseId);
+        }
+        if (status && status !== 'all') {
+          countQuery = countQuery.eq('status', status);
+        }
+        if (category) {
+          countQuery = countQuery.eq('category', category);
+        }
+        if (search) {
+          countQuery = countQuery.ilike('title', `%${search}%`);
+        }
+
+        const { count, error: countError } = await countQuery;
+        if (countError) throw countError;
+
+        // 构建数据查询（包含子分类）
+        let query = db.client
+          .from('personal_knowledge_items')
+          .select(`
+            *,
+            category_subcategories (
+              id,
+              category,
+              name,
+              keywords
+            )
+          `);
+
+        // 应用过滤条件
+        if (knowledgeBaseId) {
+          query = query.eq('knowledge_base_id', knowledgeBaseId);
+        }
+        if (status && status !== 'all') {
+          query = query.eq('status', status);
+        }
+        if (category) {
+          query = query.eq('category', category);
+        }
+        if (tags) {
+          const tagList = tags.split(',').map(t => t.trim());
+          // Supabase JSONB 查询：使用 contains 检查数组是否包含值
+          tagList.forEach(tag => {
+            query = query.contains('tags', [tag]);
+          });
+        }
+        if (search) {
+          query = query.ilike('title', `%${search}%`);
+        }
+
+        // 排序和分页
+        query = query
+          .order('created_at', { ascending: false })
+          .range(
+            (parseInt(page) - 1) * parseInt(limit),
+            parseInt(page) * parseInt(limit) - 1
+          );
+
+        const { data: items, error } = await query;
+
+        if (error) throw error;
+
+        // 解析 JSON 字段并处理子分类
+        const itemsWithParsed = (items || []).map((item) => {
+          const tags = typeof item.tags === 'string' ? JSON.parse(item.tags || '[]') : (item.tags || []);
+          const category = item.category || 'work';
+          
+          // 处理子分类（Supabase 返回的是数组）
+          let subcategory = null;
+          if (item.category_subcategories && Array.isArray(item.category_subcategories) && item.category_subcategories.length > 0) {
+            const subcat = item.category_subcategories[0];
+            subcategory = {
+              id: subcat.id,
+              name: subcat.name,
+              keywords: typeof subcat.keywords === 'string' ? JSON.parse(subcat.keywords || '[]') : (subcat.keywords || [])
+            };
+          }
+
+          // 清理数据
+          const { category_subcategories, ...cleanItem } = item;
+
+          return {
+            ...cleanItem,
+            tags,
+            keyConclusions: typeof cleanItem.key_conclusions === 'string' ? JSON.parse(cleanItem.key_conclusions || '[]') : (cleanItem.key_conclusions || []),
+            metadata: cleanItem.metadata ? (typeof cleanItem.metadata === 'string' ? JSON.parse(cleanItem.metadata) : cleanItem.metadata) : {},
+            category,
+            subcategory_id: cleanItem.subcategory_id || null,
+            subcategory
+          };
+        });
+
+        return createSuccessResponse({
+          data: itemsWithParsed,
+          total: count || 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          hasMore: (parseInt(page) * parseInt(limit)) < (count || 0)
+        });
+      } catch (error) {
+        console.error('获取知识列表失败:', error);
+        return createErrorResponse(500, error.message || '获取知识列表失败');
+      }
+    }
+
     // 其他路由暂不支持
     return createErrorResponse(404, '路由不存在');
   } catch (error) {
