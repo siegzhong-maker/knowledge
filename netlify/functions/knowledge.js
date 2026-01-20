@@ -60,31 +60,72 @@ function calculateETA(progressHistory, currentProgress, startTime) {
  */
 async function updateTaskStatus(extractionId, updates) {
   const now = Date.now();
-  const task = await db.client.from('extraction_tasks').select('*').eq('id', extractionId).single();
   
-  if (!task.data) {
-    // 如果任务不存在，创建它
-    const newTask = {
-      id: extractionId,
-      status: updates.status || 'processing',
-      total_items: updates.totalItems || 0,
-      processed_items: updates.processedItems || 0,
-      extracted_count: updates.extractedCount || 0,
-      knowledge_item_ids: updates.knowledgeItemIds ? JSON.stringify(updates.knowledgeItemIds) : '[]',
-      knowledge_items: updates.knowledgeItems ? JSON.stringify(updates.knowledgeItems) : '[]',
-      stage: updates.stage || 'parsing',
-      progress: updates.progress || 0,
-      current_doc_index: updates.currentDocIndex || 0,
-      error: updates.error || null,
-      error_details: updates.errorDetails ? JSON.stringify(updates.errorDetails) : null,
-      progress_history: updates.progressHistory ? JSON.stringify(updates.progressHistory) : '[]',
-      start_time: updates.startTime || now,
-      created_at: now,
-      updated_at: now
-    };
+  try {
+    const { data: taskData, error: queryError } = await db.client
+      .from('extraction_tasks')
+      .select('*')
+      .eq('id', extractionId)
+      .single();
     
-    await db.client.from('extraction_tasks').insert(newTask);
-  } else {
+    // 处理查询错误（表不存在或权限问题）
+    if (queryError && queryError.code !== 'PGRST116') {
+      console.error('[Knowledge] ❌ 查询任务状态失败:', {
+        extractionId,
+        error: queryError.message,
+        code: queryError.code,
+        hint: queryError.hint
+      });
+      throw queryError;
+    }
+    
+    if (!taskData) {
+      // 如果任务不存在，创建它
+      console.log('[Knowledge] 创建新任务:', extractionId);
+      const newTask = {
+        id: extractionId,
+        status: updates.status || 'processing',
+        total_items: updates.totalItems || 0,
+        processed_items: updates.processedItems || 0,
+        extracted_count: updates.extractedCount || 0,
+        knowledge_item_ids: updates.knowledgeItemIds ? JSON.stringify(updates.knowledgeItemIds) : '[]',
+        knowledge_items: updates.knowledgeItems ? JSON.stringify(updates.knowledgeItems) : '[]',
+        stage: updates.stage || 'parsing',
+        progress: updates.progress || 0,
+        current_doc_index: updates.currentDocIndex || 0,
+        error: updates.error || null,
+        error_details: updates.errorDetails ? JSON.stringify(updates.errorDetails) : null,
+        progress_history: updates.progressHistory ? JSON.stringify(updates.progressHistory) : '[]',
+        start_time: updates.startTime || now,
+        created_at: now,
+        updated_at: now
+      };
+      
+      const { data: insertedData, error: insertError } = await db.client
+        .from('extraction_tasks')
+        .insert(newTask)
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error('[Knowledge] ❌ 创建任务失败:', {
+          extractionId,
+          error: insertError.message,
+          code: insertError.code,
+          hint: insertError.hint,
+          details: insertError.details
+        });
+        
+        // 如果是表不存在错误，提供明确的提示
+        if (insertError.message && insertError.message.includes('does not exist')) {
+          throw new Error(`extraction_tasks 表不存在。请在 Supabase SQL Editor 中执行 supabase/migrations/002_extraction_tasks.sql`);
+        }
+        
+        throw insertError;
+      }
+      
+      console.log('[Knowledge] ✅ 任务创建成功:', extractionId);
+    } else {
     // 更新现有任务
     const updateData = {
       updated_at: now
@@ -103,7 +144,31 @@ async function updateTaskStatus(extractionId, updates) {
     if (updates.errorDetails !== undefined) updateData.error_details = JSON.stringify(updates.errorDetails);
     if (updates.progressHistory !== undefined) updateData.progress_history = JSON.stringify(updates.progressHistory);
     
-    await db.client.from('extraction_tasks').update(updateData).eq('id', extractionId);
+      const { data: updatedData, error: updateError } = await db.client
+        .from('extraction_tasks')
+        .update(updateData)
+        .eq('id', extractionId)
+        .select()
+        .single();
+      
+      if (updateError) {
+        console.error('[Knowledge] ❌ 更新任务状态失败:', {
+          extractionId,
+          error: updateError.message,
+          code: updateError.code
+        });
+        throw updateError;
+      }
+      
+      console.log('[Knowledge] ✅ 任务状态已更新:', extractionId, updateData.status);
+    }
+  } catch (error) {
+    console.error('[Knowledge] ❌ updateTaskStatus 失败:', {
+      extractionId,
+      error: error.message,
+      stack: error.stack
+    });
+    throw error;
   }
 }
 
@@ -121,20 +186,26 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
       hasUserApiKey: !!userApiKey
     });
 
-    // 设置初始状态
-    await updateTaskStatus(extractionId, {
-      status: 'processing',
-      totalItems: itemIds.length,
-      processedItems: 0,
-      extractedCount: 0,
-      knowledgeItemIds: [],
-      knowledgeItems: [],
-      stage: 'parsing',
-      progress: 0,
-      currentDocIndex: 0,
-      startTime: Date.now(),
-      progressHistory: []
-    });
+    // 注意：任务记录已在 handler 中创建，这里只需要更新状态
+    // 如果记录不存在（可能创建失败），这里会重新创建
+    try {
+      await updateTaskStatus(extractionId, {
+        status: 'processing',
+        totalItems: itemIds.length,
+        processedItems: 0,
+        extractedCount: 0,
+        knowledgeItemIds: [],
+        knowledgeItems: [],
+        stage: 'parsing',
+        progress: 0,
+        currentDocIndex: 0,
+        startTime: Date.now(),
+        progressHistory: []
+      });
+    } catch (statusError) {
+      console.error('[Knowledge] ❌ 更新任务初始状态失败:', statusError);
+      // 继续执行，让后续的错误处理捕获
+    }
 
     // 检查 DATABASE_URL
     if (!process.env.DATABASE_URL) {
@@ -339,9 +410,31 @@ exports.handler = async (event, context) => {
       const extractionId = `ext-${uuidv4().split('-')[0]}`;
       
       // 异步启动提取任务（不阻塞响应）
+      // 注意：先创建任务记录，确保状态查询可以找到任务
+      try {
+        await updateTaskStatus(extractionId, {
+          status: 'processing',
+          totalItems: itemIds.length,
+          processedItems: 0,
+          extractedCount: 0,
+          knowledgeItemIds: [],
+          knowledgeItems: [],
+          stage: 'parsing',
+          progress: 0,
+          currentDocIndex: 0,
+          startTime: Date.now(),
+          progressHistory: []
+        });
+        console.log('[Knowledge] ✅ 任务记录已创建，开始异步执行提取');
+      } catch (initError) {
+        console.error('[Knowledge] ❌ 创建任务记录失败:', initError);
+        // 即使创建失败，也继续尝试启动任务（可能会再次失败，但至少会记录错误）
+      }
+      
+      // 异步执行提取任务
       startExtractionTask(itemIds, targetKnowledgeBaseId, extractionId, userApiKey, extractionOptions)
         .catch(error => {
-          console.error('启动提取任务失败:', error);
+          console.error('[Knowledge] ❌ 启动提取任务失败:', error);
         });
 
       // 立即返回提取任务ID
