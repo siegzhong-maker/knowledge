@@ -1,5 +1,5 @@
 const { callDeepSeekAPI } = require('./ai');
-const db = require('../utils/db');
+const db = require('../functions/utils/db');
 const { v4: uuidv4 } = require('uuid');
 
 /**

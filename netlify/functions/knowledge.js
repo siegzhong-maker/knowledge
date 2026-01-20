@@ -238,10 +238,10 @@ async function startExtractionTask(itemIds, knowledgeBaseId, extractionId, userA
       console.log('[Knowledge] __dirname:', __dirname);
       console.log('[Knowledge] process.cwd():', process.cwd());
       
-      // 使用相对路径导入（相对于当前文件）
+      // 使用相对路径导入（services 目录已移到 netlify/services/）
       // 在 Netlify Functions 中，__dirname 指向 /var/task/netlify/functions/
-      // 所以 ./services/knowledge-extractor 应该指向 /var/task/netlify/functions/services/knowledge-extractor
-      knowledgeExtractor = require('./services/knowledge-extractor');
+      // 所以 ../services/knowledge-extractor 应该指向 /var/task/netlify/services/knowledge-extractor
+      knowledgeExtractor = require('../services/knowledge-extractor');
       console.log('[Knowledge] ✅ 知识提取服务导入成功');
     } catch (importError) {
       console.error('[Knowledge] ❌ 导入知识提取服务失败:', importError);

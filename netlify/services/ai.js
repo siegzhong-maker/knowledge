@@ -1,5 +1,5 @@
-// 适配 Netlify Functions：使用 ../utils/db 替代 ./db
-const db = require('../utils/db');
+// 适配 Netlify Functions：使用 ../functions/utils/db 替代 ./db
+const db = require('../functions/utils/db');
 const { decryptFromString } = require('./crypto');
 
 /**
